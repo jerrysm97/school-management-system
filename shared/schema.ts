@@ -18,6 +18,7 @@ export const finAuditActionEnum = pgEnum("fin_audit_action", ["create", "update"
 
 export const feeStatusEnum = pgEnum("fee_status", ["pending", "paid", "overdue", "partial"]);
 export const paymentMethodEnum = pgEnum("payment_method", ["cash", "card", "bank_transfer", "check", "online"]);
+export const refundStatusEnum = pgEnum("refund_status", ["pending", "approved", "rejected", "processed"]);
 export const feeTypeEnum = pgEnum("fee_type", ["tuition", "hostel", "transport", "library", "exam", "other"]);
 export const transactionTypeEnum = pgEnum("transaction_type", ["payment", "refund", "waiver", "charge", "adjustment"]);
 export const studentStatusEnum = pgEnum("student_status", ["pending", "approved", "rejected"]);
@@ -46,6 +47,8 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   role: roleEnum("role").notNull(),
   mustChangePassword: boolean("must_change_password").default(false),
+  googleId: text("google_id").unique(),
+  avatarUrl: text("avatar_url"),
   udf: jsonb("udf").default({}), // Universal Data Fields
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -613,3 +616,821 @@ export type Staff = typeof staff.$inferSelect;
 export type InsertStaff = z.infer<typeof insertStaffSchema>;
 export type CourseEnrollment = typeof courseEnrollments.$inferSelect;
 export type LmsSubmission = typeof lmsSubmissions.$inferSelect;
+
+// ========================================
+// GENERAL LEDGER (GL) MODULE TABLES
+// ========================================
+
+// GL Enums
+export const glAccountTypeEnum = pgEnum("gl_account_type", [
+  "asset",
+  "liability",
+  "equity",
+  "revenue",
+  "expense"
+]);
+
+export const glAccountSubTypeEnum = pgEnum("gl_account_sub_type", [
+  // Assets
+  "current_asset",
+  "fixed_asset",
+  "other_asset",
+  // Liabilities
+  "current_liability",
+  "long_term_liability",
+  // Equity
+  "retained_earnings",
+  "net_income",
+  // Revenue
+  "tuition_revenue",
+  "other_revenue",
+  // Expenses
+  "operating_expense",
+  "non_operating_expense"
+]);
+
+export const glTransactionTypeEnum = pgEnum("gl_transaction_type", [
+  "debit",
+  "credit"
+]);
+
+export const glJournalStatusEnum = pgEnum("gl_journal_status", [
+  "draft",
+  "posted",
+  "voided",
+  "reversed"
+]);
+
+export const glFundTypeEnum = pgEnum("gl_fund_type", [
+  "unrestricted",
+  "restricted",
+  "endowment",
+  "capital_project"
+]);
+
+// Chart of Accounts - Hierarchical account structure
+export const chartOfAccounts = pgTable("chart_of_accounts", {
+  id: serial("id").primaryKey(),
+  accountCode: text("account_code").unique().notNull(), // e.g., "1000", "2100"
+  accountName: text("account_name").notNull(), // e.g., "Cash", "Accounts Receivable"
+  accountType: glAccountTypeEnum("account_type").notNull(),
+  accountSubType: glAccountSubTypeEnum("account_sub_type"),
+  parentAccountId: integer("parent_account_id"), // For hierarchical structure
+  isActive: boolean("is_active").default(true),
+  normalBalance: glTransactionTypeEnum("normal_balance").notNull(), // debit or credit
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Funds - Multi-fund accounting
+export const glFunds = pgTable("gl_funds", {
+  id: serial("id").primaryKey(),
+  fundCode: text("fund_code").unique().notNull(), // e.g., "GEN001", "END002"
+  fundName: text("fund_name").notNull(), // e.g., "General Operating Fund"
+  fundType: glFundTypeEnum("fund_type").notNull(),
+  balance: integer("balance").default(0).notNull(), // in cents
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date"),
+  description: text("description"),
+  restrictions: text("restrictions"), // Donor or legal restrictions
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Fiscal Periods - For financial reporting
+export const fiscalPeriods = pgTable("fiscal_periods", {
+  id: serial("id").primaryKey(),
+  periodName: text("period_name").notNull(), // e.g., "FY2026-Q1", "January 2026"
+  fiscalYear: integer("fiscal_year").notNull(), // e.g., 2026
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  isClosed: boolean("is_closed").default(false), // True when period is closed for posting
+  closedAt: timestamp("closed_at"),
+  closedBy: integer("closed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Journal Entry Headers - Batch posting
+export const glJournalEntries = pgTable("gl_journal_entries", {
+  id: serial("id").primaryKey(),
+  journalNumber: text("journal_number").unique().notNull(), // Auto-generated: JE-20260129-001
+  entryDate: date("entry_date").notNull(),
+  fiscalPeriodId: integer("fiscal_period_id").notNull().references(() => fiscalPeriods.id),
+  description: text("description").notNull(),
+  status: glJournalStatusEnum("status").default("draft").notNull(),
+  totalDebit: integer("total_debit").default(0).notNull(), // in cents
+  totalCredit: integer("total_credit").default(0).notNull(), // in cents
+  postedAt: timestamp("posted_at"),
+  postedBy: integer("posted_by").references(() => users.id),
+  createdBy: integer("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  reversedBy: integer("reversed_by"), // Reference to reversing journal entry
+  referenceType: text("reference_type"), // e.g., "AR_Payment", "AP_Invoice", "Manual"
+  referenceId: integer("reference_id"), // ID from source transaction
+});
+
+// GL Transactions - Individual debit/credit lines
+export const glTransactions = pgTable("gl_transactions", {
+  id: serial("id").primaryKey(),
+  journalEntryId: integer("journal_entry_id").notNull().references(() => glJournalEntries.id),
+  accountId: integer("account_id").notNull().references(() => chartOfAccounts.id),
+  fundId: integer("fund_id").references(() => glFunds.id),
+  transactionType: glTransactionTypeEnum("transaction_type").notNull(),
+  amount: integer("amount").notNull(), // in cents, always positive
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Account Reconciliations - Track bank/account reconciliation periods
+export const glReconciliationStatusEnum = pgEnum("gl_reconciliation_status", [
+  "in_progress",
+  "completed",
+  "reviewed"
+]);
+
+export const glReconciliations = pgTable("gl_reconciliations", {
+  id: serial("id").primaryKey(),
+  reconciliationNumber: text("reconciliation_number").unique().notNull(), // e.g., "RECON-1000-202601"
+  accountId: integer("account_id").notNull().references(() => chartOfAccounts.id),
+  reconciliationDate: date("reconciliation_date").notNull(), // Statement date
+  startingBalance: integer("starting_balance").notNull(), // in cents
+  endingBalance: integer("ending_balance").notNull(), // in cents, from bank statement
+  statementBalance: integer("statement_balance").notNull(), // in cents, should match ending balance
+  adjustments: integer("adjustments").default(0).notNull(), // Total adjustments in cents
+  status: glReconciliationStatusEnum("status").default("in_progress").notNull(),
+  reconciledBy: integer("reconciled_by").notNull().references(() => users.id),
+  reconciledAt: timestamp("reconciled_at"),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Reconciliation Items - Track which transactions are cleared
+export const glReconciliationItems = pgTable("gl_reconciliation_items", {
+  id: serial("id").primaryKey(),
+  reconciliationId: integer("reconciliation_id").notNull().references(() => glReconciliations.id),
+  transactionId: integer("transaction_id").notNull().references(() => glTransactions.id),
+  isCleared: boolean("is_cleared").default(false).notNull(),
+  clearedDate: date("cleared_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========================================
+// ACCOUNTS RECEIVABLE (AR) MODULE TABLES
+// ========================================
+
+export const arBillStatusEnum = pgEnum("ar_bill_status", [
+  "draft",
+  "open",
+  "partial",
+  "paid",
+  "overdue",
+  "written_off",
+  "cancelled"
+]);
+
+export const arPaymentStatusEnum = pgEnum("ar_payment_status", [
+  "pending",
+  "cleared",
+  "bounced",
+  "refunded"
+]);
+
+// Student Bills - Formal invoicing
+export const arStudentBills = pgTable("ar_student_bills", {
+  id: serial("id").primaryKey(),
+  billNumber: text("bill_number").unique().notNull(), // AUTO: BILL-2026-001234
+  studentId: integer("student_id").notNull().references(() => students.id),
+  fiscalPeriodId: integer("fiscal_period_id").references(() => fiscalPeriods.id),
+  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id),
+  billDate: date("bill_date").notNull(),
+  dueDate: date("due_date").notNull(),
+  totalAmount: integer("total_amount").notNull().default(0), // in cents
+  paidAmount: integer("paid_amount").notNull().default(0),
+  balanceDue: integer("balance_due").notNull().default(0),
+  status: arBillStatusEnum("status").default("draft").notNull(),
+  notes: text("notes"),
+  glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id), // Link to GL posting
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  postedAt: timestamp("posted_at"),
+});
+
+// Bill Line Items - Individual charges
+export const arBillLineItems = pgTable("ar_bill_line_items", {
+  id: serial("id").primaryKey(),
+  billId: integer("bill_id").notNull().references(() => arStudentBills.id),
+  description: text("description").notNull(), // e.g., "Tuition - Fall 2026"
+  feeType: feeTypeEnum("fee_type").notNull(),
+  quantity: integer("quantity").default(1),
+  unitPrice: integer("unit_price").notNull(), // in cents
+  amount: integer("amount").notNull(), // quantity * unitPrice
+  glAccountId: integer("gl_account_id").references(() => chartOfAccounts.id), // Revenue account
+});
+
+// AR Payments
+export const arPayments = pgTable("ar_payments", {
+  id: serial("id").primaryKey(),
+  paymentNumber: text("payment_number").unique().notNull(), // AUTO: PAY-2026-001234
+  studentId: integer("student_id").notNull().references(() => students.id),
+  paymentDate: date("payment_date").notNull(),
+  amount: integer("amount").notNull(), // in cents
+  paymentMethod: paymentMethodEnum("payment_method").notNull(),
+  status: arPaymentStatusEnum("status").default("cleared").notNull(),
+  referenceNumber: text("reference_number"), // Check number, transaction ID
+  notes: text("notes"),
+  glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Payment Allocations - Which bills did this payment apply to?
+export const arPaymentAllocations = pgTable("ar_payment_allocations", {
+  id: serial("id").primaryKey(),
+  paymentId: integer("payment_id").notNull().references(() => arPayments.id),
+  billId: integer("bill_id").notNull().references(() => arStudentBills.id),
+  amount: integer("amount").notNull(), // in cents
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// AR Refunds
+// Student Refunds - Enhanced with workflow
+export const arRefunds = pgTable("ar_refunds", {
+  id: serial("id").primaryKey(),
+  refundNumber: text("refund_number").unique().notNull(),
+  studentId: integer("student_id").notNull().references(() => students.id),
+  requestDate: date("request_date").notNull(),
+  refundDate: date("refund_date"),
+  amount: integer("amount").notNull(), // in cents
+  reason: text("reason").notNull(),
+  refundMethod: paymentMethodEnum("refund_method").notNull(),
+  status: refundStatusEnum("status").default("pending").notNull(),
+  checkNumber: text("check_number"),
+  notes: text("notes"),
+  glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Dunning History - Payment reminders
+export const arDunningHistory = pgTable("ar_dunning_history", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => students.id),
+  billId: integer("bill_id").references(() => arStudentBills.id),
+  sentDate: date("sent_date").notNull(),
+  daysOverdue: integer("days_overdue").notNull(),
+  amountDue: integer("amount_due").notNull(),
+  dunningLevel: integer("dunning_level").default(1), // 1st reminder, 2nd, etc.
+  messageTemplate: text("message_template"),
+  sentBy: integer("sent_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========================================
+// ACCOUNTS PAYABLE (AP) MODULE TABLES
+// ========================================
+
+export const apInvoiceStatusEnum = pgEnum("ap_invoice_status", [
+  "draft",
+  "pending_approval",
+  "approved",
+  "rejected",
+  "scheduled",
+  "paid",
+  "cancelled"
+]);
+
+// AR Charge Items
+export const arChargeItems = pgTable("ar_charge_items", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  description: text("description").notNull(),
+  amount: integer("amount").notNull(), // standard amount
+  glAccountId: integer("gl_account_id"), // Default GL account
+  isActive: boolean("is_active").default(true),
+});
+
+export const insertArChargeItemSchema = createInsertSchema(arChargeItems).omit({ id: true });
+export type ArChargeItem = typeof arChargeItems.$inferSelect;
+export type InsertArChargeItem = typeof arChargeItems.$inferInsert;
+
+
+// AR Auto-Billing Rules
+export const arAutoBillRules = pgTable("ar_auto_bill_rules", {
+  id: serial("id").primaryKey(),
+  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id),
+  // programId link removed for now as table existence uncertain
+  courseId: integer("course_id").references(() => courses.id),
+  chargeItemId: integer("charge_item_id").notNull().references(() => arChargeItems.id),
+  amount: integer("amount").notNull(),
+  isResidencyBased: boolean("is_residency_based").default(false),
+  residencyType: text("residency_type"), // 'in_state', 'out_of_state', 'international'
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+});
+
+export const insertArAutoBillRuleSchema = createInsertSchema(arAutoBillRules).omit({ id: true });
+export type ArAutoBillRule = typeof arAutoBillRules.$inferSelect;
+export type InsertArAutoBillRule = typeof arAutoBillRules.$inferInsert;
+
+export const apPaymentStatusEnum = pgEnum("ap_payment_status", [
+  "scheduled",
+  "processed",
+  "cleared",
+  "cancelled",
+  "failed"
+]);
+
+export const apPaymentMethodEnum = pgEnum("ap_payment_method", [
+  "check",
+  "wire_transfer",
+  "ach",
+  "eft",
+  "credit_card"
+]);
+
+export const apApprovalStatusEnum = pgEnum("ap_approval_status", [
+  "pending",
+  "approved",
+  "rejected"
+]);
+
+// Vendors - Supplier database
+export const apVendors = pgTable("ap_vendors", {
+  id: serial("id").primaryKey(),
+  vendorCode: text("vendor_code").unique().notNull(), // VEN-001
+  vendorName: text("vendor_name").notNull(),
+  contactName: text("contact_name"),
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  taxId: text("tax_id"), // For 1099 reporting
+  paymentTerms: text("payment_terms"), // e.g., "Net 30"
+  bankAccountInfo: text("bank_account_info"), // Encrypted
+  isActive: boolean("is_active").default(true),
+  is1099Vendor: boolean("is_1099_vendor").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// AP Invoices
+export const apInvoices = pgTable("ap_invoices", {
+  id: serial("id").primaryKey(),
+  invoiceNumber: text("invoice_number").unique().notNull(), // AUTO or vendor number
+  vendorId: integer("vendor_id").notNull().references(() => apVendors.id),
+  purchaseOrderId: integer("purchase_order_id"), // Link to PO if exists
+  invoiceDate: date("invoice_date").notNull(),
+  dueDate: date("due_date").notNull(),
+  totalAmount: integer("total_amount").notNull(), // in cents
+  paidAmount: integer("paid_amount").default(0),
+  status: apInvoiceStatusEnum("status").default("draft").notNull(),
+  description: text("description"),
+  attachmentUrl: text("attachment_url"), // Scanned invoice
+  glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// AP Invoice Line Items
+export const apInvoiceLineItems = pgTable("ap_invoice_line_items", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull().references(() => apInvoices.id),
+  description: text("description").notNull(),
+  category: finExpenseCategoryEnum("category").notNull(),
+  quantity: integer("quantity").default(1),
+  unitPrice: integer("unit_price").notNull(),
+  amount: integer("amount").notNull(),
+  glAccountId: integer("gl_account_id").references(() => chartOfAccounts.id), // Expense account
+});
+
+// AP Approval Workflow
+export const apApprovals = pgTable("ap_approvals", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull().references(() => apInvoices.id),
+  approvalLevel: integer("approval_level").notNull(), // 1, 2, 3 for multi-level
+  approverId: integer("approver_id").notNull().references(() => users.id),
+  status: apApprovalStatusEnum("status").default("pending"),
+  comments: text("comments"),
+  respondedAt: timestamp("responded_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// AP Payments
+export const apPayments = pgTable("ap_payments", {
+  id: serial("id").primaryKey(),
+  paymentNumber: text("payment_number").unique().notNull(), // CHECK-001, WIRE-001
+  vendorId: integer("vendor_id").notNull().references(() => apVendors.id),
+  invoiceId: integer("invoice_id").references(() => apInvoices.id),
+  paymentDate: date("payment_date").notNull(),
+  amount: integer("amount").notNull(),
+  paymentMethod: apPaymentMethodEnum("payment_method").notNull(),
+  status: apPaymentStatusEnum("status").default("scheduled").notNull(),
+  referenceNumber: text("reference_number"), // Check number, wire confirmation
+  glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Expense Reports - For employee reimbursements
+export const apExpenseReports = pgTable("ap_expense_reports", {
+  id: serial("id").primaryKey(),
+  reportNumber: text("report_number").unique().notNull(),
+  employeeId: integer("employee_id").notNull().references(() => users.id),
+  reportDate: date("report_date").notNull(),
+  totalAmount: integer("total_amount").notNull(),
+  status: apInvoiceStatusEnum("status").default("draft").notNull(),
+  purpose: text("purpose"),
+  approvedBy: integer("approved_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Expense Report Line Items
+export const apExpenseReportItems = pgTable("ap_expense_report_items", {
+  id: serial("id").primaryKey(),
+  expenseReportId: integer("expense_report_id").notNull().references(() => apExpenseReports.id),
+  expenseDate: date("expense_date").notNull(),
+  category: finExpenseCategoryEnum("category").notNull(),
+  description: text("description").notNull(),
+  amount: integer("amount").notNull(),
+  receiptUrl: text("receipt_url"),
+  glAccountId: integer("gl_account_id").references(() => chartOfAccounts.id),
+});
+
+// 1099 Tax Records
+export const ap1099Records = pgTable("ap_1099_records", {
+  id: serial("id").primaryKey(),
+  vendorId: integer("vendor_id").notNull().references(() => apVendors.id),
+  taxYear: integer("tax_year").notNull(),
+  totalAmount: integer("total_amount").notNull(), // Total payments for year
+  formType: text("form_type").default("1099-MISC"), // or 1099-NEC
+  generatedAt: timestamp("generated_at"),
+  generatedBy: integer("generated_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Purchase Orders
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: serial("id").primaryKey(),
+  poNumber: text("po_number").unique().notNull(),
+  vendorId: integer("vendor_id").notNull().references(() => apVendors.id),
+  orderDate: date("order_date").notNull(),
+  expectedDate: date("expected_date"),
+  totalAmount: integer("total_amount").notNull(),
+  status: text("status").default("open"), // open, partially_received, received, closed
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// PO Line Items
+export const poLineItems = pgTable("po_line_items", {
+  id: serial("id").primaryKey(),
+  poId: integer("po_id").notNull().references(() => purchaseOrders.id),
+  description: text("description").notNull(),
+  quantity: integer("quantity").notNull(),
+  unitPrice: integer("unit_price").notNull(), // in cents
+  receivedQuantity: integer("received_quantity").default(0),
+  invoicedQuantity: integer("invoiced_quantity").default(0),
+  glAccountId: integer("gl_account_id").references(() => chartOfAccounts.id),
+});
+
+// Zod Schemas for PO
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders);
+export const insertPoLineItemSchema = createInsertSchema(poLineItems);
+
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type InsertPurchaseOrder = typeof purchaseOrders.$inferInsert;
+export type PoLineItem = typeof poLineItems.$inferSelect;
+export type InsertPoLineItem = typeof poLineItems.$inferInsert;
+
+// ========================================
+// PAYROLL MODULE TABLES
+// ========================================
+
+export const payrollStatusEnum = pgEnum("payroll_status", [
+  "draft",
+  "calculated",
+  "approved",
+  "processed",
+  "paid"
+]);
+
+export const employmentTypeEnum = pgEnum("employment_type", [
+  "full_time",
+  "part_time",
+  "hourly",
+  "contract"
+]);
+
+// Payroll Runs - Batch processing
+export const payrollRuns = pgTable("payroll_runs", {
+  id: serial("id").primaryKey(),
+  runNumber: text("run_number").unique().notNull(), // PR-2026-01-15
+  payPeriodStart: date("pay_period_start").notNull(),
+  payPeriodEnd: date("pay_period_end").notNull(),
+  payDate: date("pay_date").notNull(),
+  totalGross: integer("total_gross").default(0), // in cents
+  totalDeductions: integer("total_deductions").default(0),
+  totalNet: integer("total_net").default(0),
+  status: payrollStatusEnum("status").default("draft").notNull(),
+  glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
+  processedBy: integer("processed_by").references(() => users.id),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Payroll Details - Per employee
+export const payrollDetails = pgTable("payroll_details", {
+  id: serial("id").primaryKey(),
+  payrollRunId: integer("payroll_run_id").notNull().references(() => payrollRuns.id),
+  employeeId: integer("employee_id").notNull().references(() => users.id),
+  employmentType: employmentTypeEnum("employment_type").notNull(),
+  grossPay: integer("gross_pay").notNull(), // in cents
+  federalTax: integer("federal_tax").default(0),
+  stateTax: integer("state_tax").default(0),
+  socialSecurity: integer("social_security").default(0),
+  medicare: integer("medicare").default(0),
+  retirement: integer("retirement").default(0),
+  healthInsurance: integer("health_insurance").default(0),
+  otherDeductions: integer("other_deductions").default(0),
+  netPay: integer("net_pay").notNull(),
+  hoursWorked: integer("hours_worked"), // For hourly employees
+  overtimeHours: integer("overtime_hours"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Timesheets - For hourly tracking
+export const timesheets = pgTable("timesheets", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => users.id),
+  workDate: date("work_date").notNull(),
+  hoursWorked: integer("hours_worked").notNull(), // e.g., 8.5 stored as 850 (2 decimal precision)
+  overtimeHours: integer("overtime_hours").default(0),
+  description: text("description"),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// W-2 Records
+export const w2Records = pgTable("w2_records", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => users.id),
+  taxYear: integer("tax_year").notNull(),
+  totalWages: integer("total_wages").notNull(),
+  federalTaxWithheld: integer("federal_tax_withheld").notNull(),
+  socialSecurityWages: integer("social_security_wages").notNull(),
+  socialSecurityTax: integer("social_security_tax").notNull(),
+  medicareWages: integer("medicare_wages").notNull(),
+  medicareTax: integer("medicare_tax").notNull(),
+  pdfUrl: text("pdf_url"),
+  generatedAt: timestamp("generated_at"),
+  generatedBy: integer("generated_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========================================
+// ASSET DEPRECIATION TABLES
+// ========================================
+
+export const depreciationMethodEnum = pgEnum("depreciation_method", [
+  "straight_line",
+  "declining_balance",
+  "double_declining",
+  "sum_of_years"
+]);
+
+// Depreciation Schedules
+export const depreciationSchedules = pgTable("depreciation_schedules", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => finAssets.id),
+  method: depreciationMethodEnum("method").notNull(),
+  depreciationPeriods: integer("depreciation_periods").notNull(), // Total periods
+  periodsElapsed: integer("periods_elapsed").default(0),
+  currentBookValue: integer("current_book_value").notNull(),
+  accumulatedDepreciation: integer("accumulated_depreciation").default(0),
+  lastDepreciationDate: date("last_depreciation_date"),
+  nextDepreciationDate: date("next_depreciation_date"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Depreciation Entries - Monthly postings
+export const depreciationEntries = pgTable("depreciation_entries", {
+  id: serial("id").primaryKey(),
+  scheduleId: integer("schedule_id").notNull().references(() => depreciationSchedules.id),
+  entryDate: date("entry_date").notNull(),
+  amount: integer("amount").notNull(), // Depreciation amount
+  glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Asset Disposals
+export const assetDisposals = pgTable("asset_disposals", {
+  id: serial("id").primaryKey(),
+  assetId: integer("asset_id").notNull().references(() => finAssets.id),
+  disposalDate: date("disposal_date").notNull(),
+  disposalMethod: text("disposal_method"), // "Sale", "Donation", "Write-off"
+  proceedsAmount: integer("proceeds_amount").default(0),
+  bookValue: integer("book_value").notNull(),
+  gainLoss: integer("gain_loss").notNull(), // proceeds - book value
+  glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
+  notes: text("notes"),
+  disposedBy: integer("disposed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========================================
+// ENDOWMENT & INVESTMENT TABLES
+// ========================================
+
+export const investmentTypeEnum = pgEnum("investment_type", [
+  "stock",
+  "bond",
+  "mutual_fund",
+  "real_estate",
+  "other"
+]);
+
+export const transactionTypeInvestmentEnum = pgEnum("investment_transaction_type", [
+  "buy",
+  "sell",
+  "dividend",
+  "interest",
+  "split",
+  "transfer"
+]);
+
+// Endowment Funds
+export const endowmentFunds = pgTable("endowment_funds", {
+  id: serial("id").primaryKey(),
+  fundCode: text("fund_code").unique().notNull(),
+  fundName: text("fund_name").notNull(),
+  donorName: text("donor_name"),
+  principal: integer("principal").notNull(), // Original donation amount
+  currentValue: integer("current_value").notNull(),
+  spendingRate: integer("spending_rate").default(500), // 5.00% stored as 500 (basis points)
+  spendableAmount: integer("spendable_amount").default(0), // Annual distribution allowed
+  restrictions: text("restrictions"),
+  glFundId: integer("gl_fund_id").references(() => glFunds.id),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Investments
+export const investments = pgTable("investments", {
+  id: serial("id").primaryKey(),
+  endowmentFundId: integer("endowment_fund_id").references(() => endowmentFunds.id),
+  symbol: text("symbol"), // Stock ticker, etc.
+  description: text("description").notNull(),
+  investmentType: investmentTypeEnum("investment_type").notNull(),
+  quantity: integer("quantity").notNull(), // Number of shares/units
+  costBasis: integer("cost_basis").notNull(), // Purchase price per unit in cents
+  currentPrice: integer("current_price").notNull(),
+  currentValue: integer("current_value").notNull(), // quantity * currentPrice
+  purchaseDate: date("purchase_date").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Investment Transactions
+export const investmentTransactions = pgTable("investment_transactions", {
+  id: serial("id").primaryKey(),
+  investmentId: integer("investment_id").references(() => investments.id),
+  endowmentFundId: integer("endowment_fund_id").notNull().references(() => endowmentFunds.id),
+  transactionType: transactionTypeInvestmentEnum("transaction_type").notNull(),
+  transactionDate: date("transaction_date").notNull(),
+  quantity: integer("quantity"), // For buy/sell
+  pricePerUnit: integer("price_per_unit"), // in cents
+  totalAmount: integer("total_amount").notNull(),
+  fees: integer("fees").default(0),
+  glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========================================
+// SCHEMAS & EXPORTS FOR NEW TABLES
+// ========================================
+
+// GL Schemas
+export const insertChartOfAccountsSchema = createInsertSchema(chartOfAccounts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertGlFundSchema = createInsertSchema(glFunds).omit({ id: true, createdAt: true });
+export const insertFiscalPeriodSchema = createInsertSchema(fiscalPeriods).omit({ id: true, createdAt: true });
+export const insertGlJournalEntrySchema = createInsertSchema(glJournalEntries).omit({ id: true, createdAt: true });
+export const insertGlTransactionSchema = createInsertSchema(glTransactions).omit({ id: true, createdAt: true });
+export const insertGlReconciliationSchema = createInsertSchema(glReconciliations).omit({ id: true, createdAt: true });
+export const insertGlReconciliationItemSchema = createInsertSchema(glReconciliationItems).omit({ id: true, createdAt: true });
+
+
+// AR Schemas
+export const insertArStudentBillSchema = createInsertSchema(arStudentBills).omit({ id: true, createdAt: true });
+export const insertArBillLineItemSchema = createInsertSchema(arBillLineItems).omit({ id: true });
+export const insertArPaymentSchema = createInsertSchema(arPayments).omit({ id: true, createdAt: true });
+export const insertArPaymentAllocationSchema = createInsertSchema(arPaymentAllocations).omit({ id: true, createdAt: true });
+export const insertArRefundSchema = createInsertSchema(arRefunds).omit({ id: true, createdAt: true });
+export const insertArDunningHistorySchema = createInsertSchema(arDunningHistory).omit({ id: true, createdAt: true });
+
+// AP Schemas
+export const insertApVendorSchema = createInsertSchema(apVendors).omit({ id: true, createdAt: true });
+export const insertApInvoiceSchema = createInsertSchema(apInvoices).omit({ id: true, createdAt: true });
+export const insertApInvoiceLineItemSchema = createInsertSchema(apInvoiceLineItems).omit({ id: true });
+export const insertApApprovalSchema = createInsertSchema(apApprovals).omit({ id: true, createdAt: true });
+export const insertApPaymentSchema = createInsertSchema(apPayments).omit({ id: true, createdAt: true });
+export const insertApExpenseReportSchema = createInsertSchema(apExpenseReports).omit({ id: true, createdAt: true });
+export const insertApExpenseReportItemSchema = createInsertSchema(apExpenseReportItems).omit({ id: true });
+export const insertAp1099RecordSchema = createInsertSchema(ap1099Records).omit({ id: true, createdAt: true });
+
+// Payroll Schemas
+export const insertPayrollRunSchema = createInsertSchema(payrollRuns).omit({ id: true, createdAt: true });
+export const insertPayrollDetailSchema = createInsertSchema(payrollDetails).omit({ id: true, createdAt: true });
+export const insertTimesheetSchema = createInsertSchema(timesheets).omit({ id: true, createdAt: true });
+export const insertW2RecordSchema = createInsertSchema(w2Records).omit({ id: true, createdAt: true });
+
+// Asset Depreciation Schemas
+export const insertDepreciationScheduleSchema = createInsertSchema(depreciationSchedules).omit({ id: true, createdAt: true });
+export const insertDepreciationEntrySchema = createInsertSchema(depreciationEntries).omit({ id: true, createdAt: true });
+export const insertAssetDisposalSchema = createInsertSchema(assetDisposals).omit({ id: true, createdAt: true });
+
+// Endowment Schemas
+export const insertEndowmentFundSchema = createInsertSchema(endowmentFunds).omit({ id: true, createdAt: true });
+export const insertInvestmentSchema = createInsertSchema(investments).omit({ id: true, createdAt: true });
+export const insertInvestmentTransactionSchema = createInsertSchema(investmentTransactions).omit({ id: true, createdAt: true });
+
+// Type Exports - GL
+export type ChartOfAccount = typeof chartOfAccounts.$inferSelect;
+export type InsertChartOfAccount = z.infer<typeof insertChartOfAccountsSchema>;
+export type GlFund = typeof glFunds.$inferSelect;
+export type InsertGlFund = z.infer<typeof insertGlFundSchema>;
+export type FiscalPeriod = typeof fiscalPeriods.$inferSelect;
+export type InsertFiscalPeriod = z.infer<typeof insertFiscalPeriodSchema>;
+export type GlJournalEntry = typeof glJournalEntries.$inferSelect;
+export type InsertGlJournalEntry = z.infer<typeof insertGlJournalEntrySchema>;
+export type GlTransaction = typeof glTransactions.$inferSelect;
+export type InsertGlTransaction = z.infer<typeof insertGlTransactionSchema>;
+export type GlReconciliation = typeof glReconciliations.$inferSelect;
+export type InsertGlReconciliation = z.infer<typeof insertGlReconciliationSchema>;
+export type GlReconciliationItem = typeof glReconciliationItems.$inferSelect;
+export type InsertGlReconciliationItem = z.infer<typeof insertGlReconciliationItemSchema>;
+
+// Type Exports - AR
+export type ArStudentBill = typeof arStudentBills.$inferSelect;
+export type InsertArStudentBill = z.infer<typeof insertArStudentBillSchema>;
+export type ArBillLineItem = typeof arBillLineItems.$inferSelect;
+export type InsertArBillLineItem = z.infer<typeof insertArBillLineItemSchema>;
+export type ArPayment = typeof arPayments.$inferSelect;
+export type InsertArPayment = z.infer<typeof insertArPaymentSchema>;
+export type ArPaymentAllocation = typeof arPaymentAllocations.$inferSelect;
+export type InsertArPaymentAllocation = z.infer<typeof insertArPaymentAllocationSchema>;
+export type ArRefund = typeof arRefunds.$inferSelect;
+export type InsertArRefund = z.infer<typeof insertArRefundSchema>;
+export type ArDunningHistory = typeof arDunningHistory.$inferSelect;
+export type InsertArDunningHistory = z.infer<typeof insertArDunningHistorySchema>;
+
+// Type Exports - AP
+export type ApVendor = typeof apVendors.$inferSelect;
+export type InsertApVendor = z.infer<typeof insertApVendorSchema>;
+export type ApInvoice = typeof apInvoices.$inferSelect;
+export type InsertApInvoice = z.infer<typeof insertApInvoiceSchema>;
+export type ApInvoiceLineItem = typeof apInvoiceLineItems.$inferSelect;
+export type InsertApInvoiceLineItem = z.infer<typeof insertApInvoiceLineItemSchema>;
+export type ApApproval = typeof apApprovals.$inferSelect;
+export type InsertApApproval = z.infer<typeof insertApApprovalSchema>;
+export type ApPayment = typeof apPayments.$inferSelect;
+export type InsertApPayment = z.infer<typeof insertApPaymentSchema>;
+export type ApExpenseReport = typeof apExpenseReports.$inferSelect;
+export type InsertApExpenseReport = z.infer<typeof insertApExpenseReportSchema>;
+export type ApExpenseReportItem = typeof apExpenseReportItems.$inferSelect;
+export type InsertApExpenseReportItem = z.infer<typeof insertApExpenseReportItemSchema>;
+export type Ap1099Record = typeof ap1099Records.$inferSelect;
+export type InsertAp1099Record = z.infer<typeof insertAp1099RecordSchema>;
+
+// Type Exports - Payroll
+export type PayrollRun = typeof payrollRuns.$inferSelect;
+export type InsertPayrollRun = z.infer<typeof insertPayrollRunSchema>;
+export type PayrollDetail = typeof payrollDetails.$inferSelect;
+export type InsertPayrollDetail = z.infer<typeof insertPayrollDetailSchema>;
+export type Timesheet = typeof timesheets.$inferSelect;
+export type InsertTimesheet = z.infer<typeof insertTimesheetSchema>;
+export type W2Record = typeof w2Records.$inferSelect;
+export type InsertW2Record = z.infer<typeof insertW2RecordSchema>;
+
+// Type Exports - Asset Depreciation
+export type DepreciationSchedule = typeof depreciationSchedules.$inferSelect;
+export type InsertDepreciationSchedule = z.infer<typeof insertDepreciationScheduleSchema>;
+export type DepreciationEntry = typeof depreciationEntries.$inferSelect;
+export type InsertDepreciationEntry = z.infer<typeof insertDepreciationEntrySchema>;
+export type AssetDisposal = typeof assetDisposals.$inferSelect;
+export type InsertAssetDisposal = z.infer<typeof insertAssetDisposalSchema>;
+
+// Type Exports - Endowments
+export type EndowmentFund = typeof endowmentFunds.$inferSelect;
+export type InsertEndowmentFund = z.infer<typeof insertEndowmentFundSchema>;
+export type Investment = typeof investments.$inferSelect;
+export type InsertInvestment = z.infer<typeof insertInvestmentSchema>;
+export type InvestmentTransaction = typeof investmentTransactions.$inferSelect;
+export type InsertInvestmentTransaction = z.infer<typeof insertInvestmentTransactionSchema>;

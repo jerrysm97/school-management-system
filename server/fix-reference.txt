@@ -1,0 +1,26 @@
+
+// Quick reference file for fixing storage.ts TypeScript errors
+// The errors occur because:
+// 1. `journalNumber` is marked as required in InsertGlJournalEntry but createJournalEntry auto-generates it
+// 2.  When calling createJournalEntry with transactions, they should NOT have journalEntryId
+//    because the function adds it internally
+
+// Solution: Generate journalNumber before calling createJournalEntry
+// Pattern:
+const journalNumber = `JE-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+
+// Then call createJournalEntry with journalNumber in the entry object
+const entry = await this.createJournalEntry(
+  {
+    journalNumber,
+    entryDate: '2026-01-29',
+    fiscalPeriodId: 1,
+    description: 'Test',
+    createdBy: 1,
+  },
+  [
+    // Transactions WITHOUT journalEntryId - it's added inside createJournalEntry
+    { accountId: 1, transactionType: 'debit', amount: 1000, description: 'Test' },
+    { accountId: 2, transactionType: 'credit', amount: 1000, description: 'Test' },
+  ]
+);

@@ -1,0 +1,60 @@
+// ========================================
+// GENERAL LEDGER (GL) MODULE - CRITICAL FIX
+// ========================================
+// Chart of Accounts
+getChartOfAccounts(isActive?: boolean): Promise<ChartOfAccount[]>;
+getChartOfAccount(id: number): Promise<ChartOfAccount | undefined>;
+createChartOfAccount(data: InsertChartOfAccount): Promise<ChartOfAccount>;
+updateChartOfAccount(id: number, data: Partial<InsertChartOfAccount>): Promise<ChartOfAccount>;
+
+// Funds
+getGlFunds(isActive?: boolean): Promise<GlFund[]>;
+createGlFund(data: InsertGlFund): Promise<GlFund>;
+
+// Fiscal Periods  
+getFiscalPeriods(year?: number): Promise<FiscalPeriod[]>;
+getCurrentFiscalPeriod(): Promise<FiscalPeriod | undefined>;
+createFiscalPeriod(data: InsertFiscalPeriod): Promise<FiscalPeriod>;
+closeFiscalPeriod(id: number, userId: number): Promise<void>;
+
+// Journal Entries
+createJournalEntry(entry: InsertGlJournalEntry, transactions: InsertGlTransaction[]): Promise<GlJournalEntry>;
+getJournalEntries(periodId?: number, status?: string): Promise<(GlJournalEntry & { transactions: GlTransaction[] })[]>;
+getJournalEntry(id: number): Promise<(GlJournalEntry & { transactions: GlTransaction[] }) | undefined>;
+postJournalEntry(id: number, userId: number): Promise<void>;
+reverseJournalEntry(id: number, userId: number, reason: string): Promise<GlJournalEntry>;
+
+// GL Transactions & Reports
+getAccountBalance(accountId: number, fundId?: number, asOfDate?: string): Promise<number>;
+getTrialBalance(periodId: number): Promise<any[]>;
+getBalanceSheet(asOfDate: string): Promise<any>;
+getIncomeStatement(startDate: string, endDate: string): Promise<any>;
+
+// AR Module
+createStudentBill(bill: InsertArStudentBill, lineItems: InsertArBillLineItem[]): Promise<ArStudentBill>;
+getStudentBills(studentId?: number, status?: string): Promise<ArStudentBill[]>;
+getStudentBill(id: number): Promise<(ArStudentBill & { lineItems: ArBillLineItem[], student: Student }) | undefined>;
+postStudentBillToGL(billId: number): Promise<void>;
+
+createArPayment(payment: InsertArPayment, allocations: { billId: number, amount: number }[]): Promise<ArPayment>;
+getArPayments(studentId?: number): Promise<ArPayment[]>;
+postArPaymentToGL(paymentId: number): Promise<void>;
+
+getAgingReport(): Promise<any[]>;
+
+// AP Module  
+createApVendor(vendor: InsertApVendor): Promise<ApVendor>;
+getApVendors(isActive?: boolean): Promise<ApVendor[]>;
+
+createApInvoice(invoice: InsertApInvoice, lineItems: any[]): Promise<ApInvoice>;
+getApInvoices(vendorId?: number, status?: string): Promise<ApInvoice[]>;
+approveApInvoice(id: number, userId: number): Promise<void>;
+postApInvoiceToGL(invoiceId: number): Promise<void>;
+
+createApPayment(payment: InsertApPayment): Promise<ApPayment>;
+postApPaymentToGL(paymentId: number): Promise<void>;
+
+// Payroll Module
+createPayrollRun(run: InsertPayrollRun, details: InsertPayrollDetail[]): Promise<PayrollRun>;
+getPayrollRuns(status?: string): Promise<PayrollRun[]>;
+postPayrollToGL(runId: number): Promise<void>;

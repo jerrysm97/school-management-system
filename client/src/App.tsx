@@ -23,6 +23,7 @@ import ExpensesPage from "@/pages/finance/ExpensesPage";
 import AssetsPage from "@/pages/finance/AssetsPage";
 import BudgetPage from "@/pages/finance/BudgetPage";
 import StudentLedgerPage from "@/pages/finance/StudentLedgerPage";
+import GLManagement from "@/pages/finance/GLManagement";
 import RecruitmentDashboard from "@/pages/hr/RecruitmentDashboard";
 import StaffDirectory from "@/pages/hr/StaffDirectory";
 import AdmissionForm from "@/pages/public/AdmissionForm";
@@ -168,6 +169,9 @@ function Router() {
       </Route>
       <Route path="/finance/student-ledger">
         <ProtectedRoute component={StudentLedgerPage} />
+      </Route>
+      <Route path="/finance/gl">
+        <ProtectedRoute component={GLManagement} />
       </Route>
 
       {/* HR Module Routes */}

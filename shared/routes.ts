@@ -23,12 +23,18 @@ export const errorSchemas = {
   }),
 };
 
-// Login Schema
 export const loginSchema = z.object({
   username: z.string(),
   password: z.string(),
 });
+export type LoginRequest = z.infer<typeof loginSchema>;
 
+export const googleLoginSchema = z.object({
+  googleId: z.string(),
+  email: z.string().email(),
+  name: z.string(),
+  avatarUrl: z.string().optional(),
+});
 export const api = {
   auth: {
     login: {

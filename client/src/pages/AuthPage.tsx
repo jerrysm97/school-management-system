@@ -18,7 +18,7 @@ import { Redirect } from "wouter";
 
 export default function AuthPage() {
   const { loginMutation, user } = useAuth();
-  
+
   const form = useForm<LoginRequest>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -58,10 +58,10 @@ export default function AuthPage() {
             <CardHeader className="space-y-1">
               <CardTitle className="text-xl">Sign in</CardTitle>
               <CardDescription>
-                Use your school assigned username
+                Use your ID, username, or institutional email
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <FormField
@@ -69,9 +69,9 @@ export default function AuthPage() {
                     name="username"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Username</FormLabel>
+                        <FormLabel>Identifier</FormLabel>
                         <FormControl>
-                          <Input placeholder="admin" {...field} className="h-11 bg-muted/50" />
+                          <Input placeholder="ID, Username, or Email" {...field} className="h-11 bg-muted/50" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -90,15 +90,38 @@ export default function AuthPage() {
                       </FormItem>
                     )}
                   />
-                  <Button 
-                    type="submit" 
-                    className="w-full h-11 text-base shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all" 
+                  <Button
+                    type="submit"
+                    className="w-full h-11 text-base shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all"
                     disabled={loginMutation.isPending}
                   >
                     {loginMutation.isPending ? "Signing in..." : "Sign in"}
                   </Button>
                 </form>
               </Form>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">
+                    Or continue with
+                  </span>
+                </div>
+              </div>
+
+              <Button
+                variant="outline"
+                className="w-full h-11 border-indigo-200 hover:bg-slate-50 gap-2 font-medium"
+                onClick={() => {
+                  // This would trigger Google OAuth
+                  alert("Google Authentication would be triggered here in a production environment with Client IDs configured.");
+                }}
+              >
+                <img src="https://www.google.com/favicon.ico" className="h-4 w-4" alt="Google" />
+                Continue with Google
+              </Button>
             </CardContent>
           </Card>
 

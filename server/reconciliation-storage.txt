@@ -1,0 +1,209 @@
+
+// ========================================
+// GL RECONCILIATION STORAGE FUNCTIONS
+// ========================================
+
+// Reconciliations
+async getReconciliations(accountId?: number, status?: string): Promise<GlReconciliation[]> {
+  let conditions = [];
+  if (accountId) conditions.push(eq(glReconciliations.accountId, accountId));
+  if (status) conditions.push(eq(glReconciliations.status, status as any));
+  
+  if (conditions.length > 0) {
+    return await db.select().from(glReconciliations).where(and(...conditions)).orderBy(desc(glReconciliations.reconciliationDate));
+  }
+  return await db.select().from(glReconciliations).orderBy(desc(glReconciliations.reconciliationDate));
+}
+
+async getReconciliation(id: number): Promise<any> {
+  const recon = await db.query.glReconciliations.findFirst({
+    where: eq(glReconciliations.id, id),
+    with: {
+      account: true,
+      reconciledByUser: true,
+      reviewedByUser: true
+    }
+  });
+  
+  if (!recon) throw new Error("Reconciliation not found");
+  
+  // Get reconciliation items
+  const items = await this.getReconciliationItems(id);
+  
+  return { ...recon, items };
+}
+
+async createReconciliation(data: InsertGlReconciliation): Promise<GlReconciliation> {
+  // Generate reconciliation number
+  const account = await db.query.chartOfAccounts.findFirst({ where: eq(chartOfAccounts.id, data.accountId) });
+  const date = data.reconciliationDate.replace(/-/g, '');
+  const count = await db.select({ count: sql<number>`count(*)` }).from(glReconciliations).where(eq(glReconciliations.accountId, data.accountId));
+  const reconciliationNumber = `RECON-${account?.accountNumber || data.accountId}-${date.slice(0, 6)}-${String(Number(count[0].count) + 1).padStart(3, '0')}`;
+  
+  const [recon] = await db.insert(glReconciliations).values({
+    ...data,
+    reconciliationNumber,
+    status: 'in_progress'
+  }).returning();
+  
+  // Get uncleared transactions for this account
+  const unclearedTxns = await this.getUnclearedTransactions(data.accountId, data.reconciliationDate);
+  
+  // Create reconciliation items for each transaction
+  for (const txn of unclearedTxns) {
+    await db.insert(glReconciliationItems).values({
+      reconciliationId: recon.id,
+      transactionId: txn.id,
+      isCleared: false
+    });
+  }
+  
+  return recon;
+}
+
+async updateReconciliation(id: number, data: Partial<InsertGlReconciliation>): Promise<GlReconciliation> {
+  const [updated] = await db.update(glReconciliations)
+    .set(data)
+    .where(eq(glReconciliations.id, id))
+    .returning();
+  return updated;
+}
+
+async completeReconciliation(id: number, userId: number): Promise<GlReconciliation> {
+  const [updated] = await db.update(glReconciliations)
+    .set({
+      status: 'completed',
+      reconciledAt: new Date(),
+      reconciledBy: userId
+    })
+    .where(eq(glReconciliations.id, id))
+    .returning();
+  return updated;
+}
+
+// Reconciliation Items
+async getReconciliationItems(reconciliationId: number): Promise<any[]> {
+  const items = await db.select({
+    id: glReconciliationItems.id,
+    reconciliationId: glReconciliationItems.reconciliationId,
+    transactionId: glReconciliationItems.transactionId,
+    isCleared: glReconciliationItems.isCleared,
+    clearedDate: glReconciliationItems.clearedDate,
+    notes: glReconciliationItems.notes,
+    // Transaction details
+    transactionType: glTransactions.transactionType,
+    amount: glTransactions.amount,
+    description: glTransactions.description,
+    // Journal entry details
+    entryDate: glJournalEntries.entryDate,
+    journalNumber: glJournalEntries.journalNumber,
+  })
+  .from(glReconciliationItems)
+  .innerJoin(glTransactions, eq(glReconciliationItems.transactionId, glTransactions.id))
+  .innerJoin(glJournalEntries, eq(glTransactions.journalEntryId, glJournalEntries.id))
+  .where(eq(glReconciliationItems.reconciliationId, reconciliationId));
+  
+  return items;
+}
+
+async markTransactionCleared(reconciliationId: number, transactionId: number, isCleared: boolean, clearedDate?: string): Promise<GlReconciliationItem> {
+  const [updated] = await db.update(glReconciliationItems)
+    .set({
+      isCleared,
+      clearedDate: isCleared ? (clearedDate || new Date().toISOString().split('T')[0]) : null
+    })
+    .where(and(
+      eq(glReconciliationItems.reconciliationId, reconciliationId),
+      eq(glReconciliationItems.transactionId, transactionId)
+    ))
+    .returning();
+  return updated;
+}
+
+async getUnclearedTransactions(accountId: number, asOfDate: string): Promise<any[]> {
+  // Get all transactions for this account up to the reconciliation date
+  // that haven't been marked as cleared in a completed reconciliation
+  
+  const txns = await db.select({
+    id: glTransactions.id,
+    journalEntryId: glTransactions.journalEntryId,
+    accountId: glTransactions.accountId,
+    transactionType: glTransactions.transactionType,
+    amount: glTransactions.amount,
+    description: glTransactions.description,
+    entryDate: glJournalEntries.entryDate,
+    journalNumber: glJournalEntries.journalNumber,
+    journalDescription: glJournalEntries.description,
+  })
+  .from(glTransactions)
+  .innerJoin(glJournalEntries, eq(glTransactions.journalEntryId, glJournalEntries.id))
+  .where(and(
+    eq(glTransactions.accountId, accountId),
+    sql`${glJournalEntries.entryDate} <= ${asOfDate}`,
+    eq(glJournalEntries.status, 'posted')
+  ))
+  .orderBy(glJournalEntries.entryDate);
+  
+  // Filter out transactions that are already cleared in a completed reconciliation
+  const unclearedTxns = [];
+  for (const txn of txns) {
+    const clearedItem = await db.query.glReconciliationItems.findFirst({
+      where: and(
+        eq(glReconciliationItems.transactionId, txn.id),
+        eq(glReconciliationItems.isCleared, true)
+      ),
+      with: {
+        reconciliation: true
+      }
+    });
+    
+    if (!clearedItem || clearedItem.reconciliation.status !== 'completed') {
+      unclearedTxns.push(txn);
+    }
+  }
+  
+  return unclearedTxns;
+}
+
+async getReconciliationSummary(reconciliationId: number): Promise<any> {
+  const recon = await db.query.glReconciliations.findFirst({
+    where: eq(glReconciliations.id, reconciliationId)
+  });
+  
+  if (!recon) throw new Error("Reconciliation not found");
+  
+  const items = await db.select({
+    isCleared: glReconciliationItems.isCleared,
+    transactionType: glTransactions.transactionType,
+    amount: glTransactions.amount,
+  })
+  .from(glReconciliationItems)
+  .innerJoin(glTransactions, eq(glReconciliationItems.transactionId, glTransactions.id))
+  .where(eq(glReconciliationItems.reconciliationId, reconciliationId));
+  
+  const clearedDebits = items.filter(i => i.isCleared && i.transactionType === 'debit').reduce((sum, i) => sum + i.amount, 0);
+  const clearedCredits = items.filter(i => i.isCleared && i.transactionType === 'credit').reduce((sum, i) => sum + i.amount, 0);
+  const unclearedDebits = items.filter(i => !i.isCleared && i.transactionType === 'debit').reduce((sum, i) => sum + i.amount, 0);
+  const unclearedCredits = items.filter(i => !i.isCleared && i.transactionType === 'credit').reduce((sum, i) => sum + i.amount, 0);
+  
+  const clearedBalance = clearedCredits - clearedDebits;
+  const unclearedBalance = unclearedCredits - unclearedDebits;
+  const glBalance = recon.startingBalance + clearedBalance;
+  const difference = glBalance - recon.statementBalance;
+  
+  return {
+    reconciliationNumber: recon.reconciliationNumber,
+    reconciliationDate: recon.reconciliationDate,
+    startingBalance: recon.startingBalance,
+    statementBalance: recon.statementBalance,
+    clearedDebits,
+    clearedCredits,
+    clearedBalance,
+    unclearedDebits,
+    unclearedCredits,
+    unclearedBalance,
+    glBalance,
+    difference,
+    isBalanced: difference === 0
+  };
+}

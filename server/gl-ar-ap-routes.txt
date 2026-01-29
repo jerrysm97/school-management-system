@@ -1,0 +1,392 @@
+// GL/AR/AP/Payroll API Routes - Add these before LMS routes in server/routes.ts
+
+  // ========================================
+  // GENERAL LEDGER (GL) API ROUTES
+  // ========================================
+
+  // Chart of Accounts
+  app.get("/api/gl/chart-of-accounts", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+      const accounts = await storage.getChartOfAccounts(isActive);
+      res.json(accounts);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/chart-of-accounts", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const account = await storage.createChartOfAccount(req.body);
+      res.status(201).json(account);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/gl/chart-of-accounts/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const account = await storage.updateChartOfAccount(Number(req.params.id), req.body);
+      res.json(account);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Funds
+  app.get("/api/gl/funds", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+      const funds = await storage.getGlFunds(isActive);
+      res.json(funds);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/funds", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const fund = await storage.createGlFund(req.body);
+      res.status(201).json(fund);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Fiscal Periods
+  app.get("/api/gl/fiscal-periods", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const year = req.query.year ? Number(req.query.year) : undefined;
+      const periods = await storage.getFiscalPeriods(year);
+      res.json(periods);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/fiscal-periods/current", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const period = await storage.getCurrentFiscalPeriod();
+      res.json(period || null);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/fiscal-periods", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const period = await storage.createFiscalPeriod(req.body);
+      res.status(201).json(period);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/fiscal-periods/:id/close", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.closeFiscalPeriod(Number(req.params.id), (req as any).user.id);
+      res.json({ message: "Fiscal period closed successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Journal Entries
+  app.get("/api/gl/journal-entries", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const periodId = req.query.periodId ? Number(req.query.periodId) : undefined;
+      const status = req.query.status as string | undefined;
+      const entries = await storage.getJournalEntries(periodId, status);
+      res.json(entries);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/journal-entries/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const entry = await storage.getJournalEntry(Number(req.params.id));
+      if (!entry) return res.status(404).json({ message: "Journal entry not found" });
+      res.json(entry);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/journal-entries", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { entry, transactions } = req.body;
+      const journalEntry = await storage.createJournalEntry({
+        ...entry,
+        createdBy: (req as any).user.id
+      }, transactions);
+      res.status(201).json(journalEntry);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/journal-entries/:id/post", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postJournalEntry(Number(req.params.id), (req as any).user.id);
+      res.json({ message: "Journal entry posted successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/journal-entries/:id/reverse", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { reason } = req.body;
+      const reversingEntry = await storage.reverseJournalEntry(Number(req.params.id), (req as any).user.id, reason);
+      res.json(reversingEntry);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // GL Reports
+  app.get("/api/gl/reports/trial-balance", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const periodId = Number(req.query.periodId);
+      if (!periodId) return res.status(400).json({ message: "periodId is required" });
+      const trialBalance = await storage.getTrialBalance(periodId);
+      res.json(trialBalance);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/reports/balance-sheet", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const asOfDate = req.query.asOfDate as string || new Date().toISOString().split('T')[0];
+      const balanceSheet = await storage.getBalanceSheet(asOfDate);
+      res.json(balanceSheet);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/reports/income-statement", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const startDate = req.query.startDate as string;
+      const endDate = req.query.endDate as string;
+      if (!startDate || !endDate) {
+        return res.status(400).json({ message: "startDate and endDate are required" });
+      }
+      const incomeStatement = await storage.getIncomeStatement(startDate, endDate);
+      res.json(incomeStatement);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ========================================
+  // ACCOUNTS RECEIVABLE (AR) API ROUTES
+  // ========================================
+
+  app.get("/api/ar/bills", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+      const status = req.query.status as string | undefined;
+      const bills = await storage.getStudentBills(studentId, status);
+      res.json(bills);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ar/bills/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const bill = await storage.getStudentBill(Number(req.params.id));
+      if (!bill) return res.status(404).json({ message: "Bill not found" });
+      res.json(bill);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/bills", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { bill, lineItems } = req.body;
+      const newBill = await storage.createStudentBill({
+        ...bill,
+        createdBy: (req as any).user.id
+      }, lineItems);
+      res.status(201).json(newBill);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/bills/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postStudentBillToGL(Number(req.params.id));
+      res.json({ message: "Bill posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ar/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+      const payments = await storage.getArPayments(studentId);
+      res.json(payments);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { payment, allocations } = req.body;
+      const newPayment = await storage.createArPayment({
+        ...payment,
+        createdBy: (req as any).user.id
+      }, allocations);
+      res.status(201).json(newPayment);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/payments/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postArPaymentToGL(Number(req.params.id));
+      res.json({ message: "Payment posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ar/reports/aging", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const aging = await storage.getAgingReport();
+      res.json(aging);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ========================================
+  // ACCOUNTS PAYABLE (AP) API ROUTES
+  // ========================================
+
+  app.get("/api/ap/vendors", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+      const vendors = await storage.getApVendors(isActive);
+      res.json(vendors);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/vendors", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const vendor = await storage.createApVendor(req.body);
+      res.status(201).json(vendor);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ap/invoices", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const vendorId = req.query.vendorId ? Number(req.query.vendorId) : undefined;
+      const status = req.query.status as string | undefined;
+      const invoices = await storage.getApInvoices(vendorId, status);
+      res.json(invoices);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/invoices", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { invoice, lineItems } = req.body;
+      const newInvoice = await storage.createApInvoice({
+        ...invoice,
+        createdBy: (req as any).user.id
+      }, lineItems);
+      res.status(201).json(newInvoice);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/invoices/:id/approve", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.approveApInvoice(Number(req.params.id), (req as any).user.id);
+      res.json({ message: "Invoice approved successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/invoices/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postApInvoiceToGL(Number(req.params.id));
+      res.json({ message: "Invoice posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const payment = await storage.createApPayment({
+        ...req.body,
+        createdBy: (req as any).user.id
+      });
+      res.status(201).json(payment);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/payments/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postApPaymentToGL(Number(req.params.id));
+      res.json({ message: "Payment posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // ========================================
+  // PAYROLL API ROUTES
+  // ========================================
+
+  app.get("/api/payroll/runs", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const runs = await storage.getPayrollRuns(status);
+      res.json(runs);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/payroll/runs", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { run, details } = req.body;
+      const payrollRun = await storage.createPayrollRun({
+        ...run,
+        processedBy: (req as any).user.id
+      }, details);
+      res.status(201).json(payrollRun);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/payroll/runs/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postPayrollToGL(Number(req.params.id));
+      res.json({ message: "Payroll posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });

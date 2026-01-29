@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { insertUserSchema } from "@shared/schema";
+import { insertUserSchema, insertArPaymentSchema, insertArAutoBillRuleSchema } from "@shared/schema";
 import { hasPermission, hasModuleAccess, canManageRole, type Role, type Module, type Permission } from "@shared/rbac";
 import jwt from "jsonwebtoken";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
@@ -85,24 +85,49 @@ export async function registerRoutes(
   // --- Auth ---
   app.post(api.auth.login.path, async (req, res) => {
     const { username, password } = req.body;
-    const user = await storage.getUserByUsername(username);
+    // support login via username (ID) or email
+    const user = await storage.getUserByIdentifier(username);
 
     if (!user || !(await comparePassword(password, user.password))) {
-      return res.status(401).json({ message: "Invalid username or password" });
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // Temporary Fix: Allow pending accounts to login for testing purposes
-    // In production, you might want to uncomment the check below or show a specific UI message.
-    /*
-    if (user.status === 'pending') {
-       return res.status(403).json({ message: "Account pending. Please contact administrator." });
+    // Role-based token generation
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({ token, user });
+  });
+
+  // Google Login Structure (Placeholder for frontend sync)
+  app.post("/api/auth/google", async (req, res) => {
+    const { googleId, email, name, avatarUrl } = req.body;
+
+    let user = await storage.getUserByGoogleId(googleId);
+
+    if (!user) {
+      // If no user linked to Google, check by email
+      user = await storage.getUserByIdentifier(email);
+
+      if (user) {
+        // Link existing account to Google
+        // Logic to update user with googleId and avatarUrl would go here
+      } else {
+        // Create new user or return error depending on institution policy
+        return res.status(404).json({ message: "No institutional account linked to this Google ID" });
+      }
     }
-    */
 
-    const token = jwt.sign({ id: user.id, role: user.role, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
+    const token = jwt.sign(
+      { id: user.id, username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
-    const { password: _, ...userWithoutPassword } = user;
-    res.json({ token, user: userWithoutPassword });
+    res.json({ token, user });
   });
 
   // NEW: Change Password Route
@@ -181,7 +206,7 @@ export async function registerRoutes(
     const allowedRoles = ['admin', 'main_admin', 'principal'];
     if (!allowedRoles.includes(userRole)) return res.sendStatus(403);
     const { status } = req.body;
-    await storage.updateStudentStatus(Number(req.params.id), status);
+    await storage.updateStudentStatus(Number((req.params.id as string)), status);
     res.json({ message: `Student ${status}` });
   });
 
@@ -231,7 +256,7 @@ export async function registerRoutes(
   });
 
   app.get(api.students.get.path, authenticateToken, async (req, res) => {
-    const student = await storage.getStudent(Number(req.params.id));
+    const student = await storage.getStudent(Number((req.params.id as string)));
     if (!student) return res.status(404).json({ message: "Student not found" });
     res.json(student);
   });
@@ -338,7 +363,7 @@ export async function registerRoutes(
 
   app.patch(api.fees.update.path, authenticateToken, async (req, res) => {
     try {
-      const id = Number(req.params.id);
+      const id = Number((req.params.id as string));
       const { status } = req.body;
       const updated = await storage.updateFeeStatus(id, status);
       if (!updated) {
@@ -390,7 +415,7 @@ export async function registerRoutes(
 
   app.patch(api.marks.update.path, authenticateToken, async (req, res) => {
     try {
-      const id = Number(req.params.id);
+      const id = Number((req.params.id as string));
       const { score } = req.body;
       const updated = await storage.updateMark(id, score);
       if (!updated) {
@@ -420,7 +445,7 @@ export async function registerRoutes(
 
   app.delete(api.timetable.delete.path, authenticateToken, async (req, res) => {
     try {
-      const id = Number(req.params.id);
+      const id = Number((req.params.id as string));
       await storage.deleteTimetableSlot(id);
       res.json({ message: "Deleted" });
     } catch (e: any) {
@@ -447,7 +472,7 @@ export async function registerRoutes(
   app.patch("/api/academic-periods/:id/toggle", authenticateToken, async (req, res) => {
     if ((req as any).user.role !== 'admin') return res.sendStatus(403);
     try {
-      const id = Number(req.params.id);
+      const id = Number((req.params.id as string));
       const { isActive } = req.body;
       await storage.toggleAcademicPeriod(id, isActive);
       res.json({ message: "Updated successfully" });
@@ -458,7 +483,7 @@ export async function registerRoutes(
 
   // --- Course History ---
   app.get("/api/students/:id/course-history", authenticateToken, async (req, res) => {
-    const studentId = Number(req.params.id);
+    const studentId = Number((req.params.id as string));
     const history = await storage.getStudentCourseHistory(studentId);
     res.json(history);
   });
@@ -469,7 +494,7 @@ export async function registerRoutes(
 
   // Student Accounts
   app.get("/api/students/:id/account", authenticateToken, async (req, res) => {
-    const studentId = Number(req.params.id);
+    const studentId = Number((req.params.id as string));
     let account = await storage.getStudentAccount(studentId);
     if (!account) {
       // Auto-create account if doesn't exist
@@ -480,7 +505,7 @@ export async function registerRoutes(
 
   app.patch("/api/students/:id/account/hold", authenticateToken, async (req, res) => {
     if ((req as any).user.role !== 'admin') return res.sendStatus(403);
-    const studentId = Number(req.params.id);
+    const studentId = Number((req.params.id as string));
     const { hasHold } = req.body;
     await storage.setFinancialHold(studentId, hasHold);
     res.json({ message: "Hold status updated" });
@@ -505,7 +530,7 @@ export async function registerRoutes(
 
   // Enrollment History
   app.get("/api/students/:id/enrollments", authenticateToken, async (req, res) => {
-    const studentId = Number(req.params.id);
+    const studentId = Number((req.params.id as string));
     const enrollments = await storage.getEnrollmentHistory(studentId);
     res.json(enrollments);
   });
@@ -520,7 +545,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/enrollments/:id/status", authenticateToken, async (req, res) => {
-    const id = Number(req.params.id);
+    const id = Number((req.params.id as string));
     const { status } = req.body;
     await storage.updateEnrollmentStatus(id, status);
     res.json({ message: "Enrollment status updated, recalculation flagged" });
@@ -528,7 +553,7 @@ export async function registerRoutes(
 
   // Financial Transactions
   app.get("/api/accounts/:id/transactions", authenticateToken, async (req, res) => {
-    const accountId = Number(req.params.id);
+    const accountId = Number((req.params.id as string));
     const transactions = await storage.getFinancialTransactions(accountId);
     res.json(transactions);
   });
@@ -550,7 +575,7 @@ export async function registerRoutes(
 
   // Financial Aid Awards
   app.get("/api/students/:id/aid", authenticateToken, async (req, res) => {
-    const studentId = Number(req.params.id);
+    const studentId = Number((req.params.id as string));
     const awards = await storage.getFinancialAidAwards(studentId);
     res.json(awards);
   });
@@ -567,7 +592,7 @@ export async function registerRoutes(
 
   app.patch("/api/aid-awards/:id/status", authenticateToken, async (req, res) => {
     if ((req as any).user.role !== 'admin') return res.sendStatus(403);
-    const id = Number(req.params.id);
+    const id = Number((req.params.id as string));
     const { status } = req.body;
     await storage.updateAidStatus(id, status);
     res.json({ message: "Aid status updated" });
@@ -575,7 +600,7 @@ export async function registerRoutes(
 
   // Bill Calculation Engine
   app.get("/api/students/:id/bill", authenticateToken, async (req, res) => {
-    const studentId = Number(req.params.id);
+    const studentId = Number((req.params.id as string));
     const bill = await storage.calculateStudentBill(studentId);
     res.json(bill);
   });
@@ -683,7 +708,7 @@ export async function registerRoutes(
   // --- Student Ledger (Advanced Finance) ---
   app.get("/api/finance/student-ledger/:studentId", authenticateToken, async (req, res) => {
     try {
-      const studentId = parseInt(req.params.studentId);
+      const studentId = parseInt(req.params.studentId as string);
       if (isNaN(studentId)) return res.status(400).json({ message: "Invalid student ID" });
 
       // 1. Get Student Details (to find linked User ID)
@@ -791,6 +816,745 @@ export async function registerRoutes(
     }
   });
 
+  // GL/AR/AP/Payroll API Routes - Add these before LMS routes in server/routes.ts
+
+  // ========================================
+  // GENERAL LEDGER (GL) API ROUTES
+  // ========================================
+
+  // Chart of Accounts
+  app.get("/api/gl/chart-of-accounts", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+      const accounts = await storage.getChartOfAccounts(isActive);
+      res.json(accounts);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/chart-of-accounts", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const account = await storage.createChartOfAccount(req.body);
+      res.status(201).json(account);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/gl/chart-of-accounts/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const account = await storage.updateChartOfAccount(Number((req.params.id as string)), req.body);
+      res.json(account);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Funds
+  app.get("/api/gl/funds", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+      const funds = await storage.getGlFunds(isActive);
+      res.json(funds);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/funds", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const fund = await storage.createGlFund(req.body);
+      res.status(201).json(fund);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Fiscal Periods
+  app.get("/api/gl/fiscal-periods", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const year = req.query.year ? Number(req.query.year) : undefined;
+      const periods = await storage.getFiscalPeriods(year);
+      res.json(periods);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/fiscal-periods/current", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const period = await storage.getCurrentFiscalPeriod();
+      res.json(period || null);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/fiscal-periods", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const period = await storage.createFiscalPeriod(req.body);
+      res.status(201).json(period);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/fiscal-periods/:id/close", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.closeFiscalPeriod(Number((req.params.id as string)), (req as any).user.id);
+      res.json({ message: "Fiscal period closed successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Journal Entries
+  app.get("/api/gl/journal-entries", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const periodId = req.query.periodId ? Number(req.query.periodId) : undefined;
+      const status = req.query.status as string | undefined;
+      const entries = await storage.getJournalEntries(periodId, status);
+      res.json(entries);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/journal-entries/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const entry = await storage.getJournalEntry(Number((req.params.id as string)));
+      if (!entry) return res.status(404).json({ message: "Journal entry not found" });
+      res.json(entry);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/journal-entries", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { entry, transactions } = req.body;
+      const journalEntry = await storage.createJournalEntry({
+        ...entry,
+        createdBy: (req as any).user.id
+      }, transactions);
+      res.status(201).json(journalEntry);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/journal-entries/:id/post", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postJournalEntry(Number((req.params.id as string)), (req as any).user.id);
+      res.json({ message: "Journal entry posted successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/journal-entries/:id/reverse", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { reason } = req.body;
+      const reversingEntry = await storage.reverseJournalEntry(Number((req.params.id as string)), (req as any).user.id, reason);
+      res.json(reversingEntry);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // GL Reports
+  app.get("/api/gl/reports/trial-balance", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const periodId = Number(req.query.periodId);
+      if (!periodId) return res.status(400).json({ message: "periodId is required" });
+      const trialBalance = await storage.getTrialBalance(periodId);
+      res.json(trialBalance);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/reports/balance-sheet", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const asOfDate = req.query.asOfDate as string || new Date().toISOString().split('T')[0];
+      const balanceSheet = await storage.getBalanceSheet(asOfDate);
+      res.json(balanceSheet);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/reports/income-statement", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const startDate = req.query.startDate as string;
+      const endDate = req.query.endDate as string;
+      if (!startDate || !endDate) {
+        return res.status(400).json({ message: "startDate and endDate are required" });
+      }
+      const incomeStatement = await storage.getIncomeStatement(startDate, endDate);
+      res.json(incomeStatement);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ========================================
+  // GL RECONCILIATION ROUTES
+  // ========================================
+
+  app.get("/api/gl/reconciliations", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const accountId = req.query.accountId ? Number(req.query.accountId) : undefined;
+      const status = req.query.status as string | undefined;
+      const reconciliations = await storage.getReconciliations(accountId, status);
+      res.json(reconciliations);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/reconciliations/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const id = parseInt((req.params.id as string));
+      const reconciliation = await storage.getReconciliation(id);
+      res.json(reconciliation);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/reconciliations", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const data = { ...req.body, reconciledBy: (req as any).user!.id };
+      const reconciliation = await storage.createReconciliation(data);
+      res.status(201).json(reconciliation);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.put("/api/gl/reconciliations/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const id = parseInt((req.params.id as string));
+      const reconciliation = await storage.updateReconciliation(id, req.body);
+      res.json(reconciliation);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/reconciliations/:id/complete", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const id = parseInt((req.params.id as string));
+      const reconciliation = await storage.completeReconciliation(id, (req as any).user!.id);
+      res.json(reconciliation);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/reconciliations/:id/summary", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const id = parseInt((req.params.id as string));
+      const summary = await storage.getReconciliationSummary(id);
+      res.json(summary);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/gl/reconciliations/:reconId/items/:txnId/toggle", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const reconciliationId = parseInt((req.params.reconId as string));
+      const transactionId = parseInt((req.params.txnId as string));
+      const { isCleared } = req.body;
+      const item = await storage.markTransactionCleared(reconciliationId, transactionId, isCleared);
+      res.json(item);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/gl/accounts/:accountId/uncleared", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const accountId = parseInt(req.params.accountId);
+      const asOfDate = req.query.asOfDate as string || new Date().toISOString().split('T')[0];
+      const transactions = await storage.getUnclearedTransactions(accountId, asOfDate);
+      res.json(transactions);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+
+  // ========================================
+  // ACCOUNTS RECEIVABLE (AR) API ROUTES
+  // ========================================
+
+  app.get("/api/ar/bills", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+      const status = req.query.status as string | undefined;
+      const bills = await storage.getStudentBills(studentId, status);
+      res.json(bills);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ar/bills/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const bill = await storage.getStudentBill(Number((req.params.id as string)));
+      if (!bill) return res.status(404).json({ message: "Bill not found" });
+      res.json(bill);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/bills", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { bill, lineItems } = req.body;
+      const newBill = await storage.createStudentBill({
+        ...bill,
+        createdBy: (req as any).user.id
+      }, lineItems);
+      res.status(201).json(newBill);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/bills/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postStudentBillToGL(Number((req.params.id as string)));
+      res.json({ message: "Bill posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // AR Refunds
+  app.get("/api/ar/refunds", authenticateToken, requireFinanceAccess, async (req, res) => {
+    const status = req.query.status as string | undefined;
+    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    try {
+      const refunds = await storage.getRefundRequests(status, studentId);
+      res.json(refunds);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/refunds", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const refund = await storage.createRefundRequest(req.body);
+      res.status(201).json(refund);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/refunds/:id/approve", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const refund = await storage.approveRefund(Number((req.params.id as string)), (req as any).user.id);
+      res.json(refund);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/refunds/:id/reject", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { reason } = req.body;
+      const refund = await storage.rejectRefund(Number((req.params.id as string)), (req as any).user.id, reason);
+      res.json(refund);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/refunds/:id/process", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { checkNumber } = req.body;
+      const refund = await storage.processRefund(Number((req.params.id as string)), checkNumber);
+      res.json(refund);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/refunds/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postRefundToGL(Number((req.params.id as string)));
+      res.json({ message: "Refund posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // AR Auto-Billing Routes
+  app.get("/api/ar/billing-rules", authenticateToken, requireFinanceAccess, async (req, res) => {
+    const periodId = req.query.periodId ? parseInt(req.query.periodId as string) : undefined;
+    const rules = await storage.getAutoBillRules(periodId);
+    res.json(rules);
+  });
+
+  app.post("/api/ar/billing-rules", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const data = insertArAutoBillRuleSchema.parse(req.body);
+      const rule = await storage.createAutoBillRule(data);
+      res.status(201).json(rule);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/generate-bill/:studentId", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const studentId = parseInt(req.params.studentId);
+      if (!req.body.enrollmentId) return res.status(400).send("Missing enrollmentId");
+
+      const bills = await storage.generateBillsFromEnrollment(studentId, req.body.enrollmentId);
+      res.json(bills);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // AP Expense Reports
+  app.post("/api/ap/expense-reports", authenticateToken, async (req, res) => {
+    try {
+      const { items, ...reportData } = req.body;
+      // Basic validation could be added here or via Zod
+      const report = {
+        ...reportData,
+        employeeId: (req as any).user!.id,
+        status: 'draft',
+        reportNumber: `EXP-${Date.now()}`
+      };
+
+      const newReport = await storage.createExpenseReport(report, items);
+      res.status(201).json(newReport);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ap/expense-reports", authenticateToken, async (req, res) => {
+    try {
+      // If not finance admin, only show own reports
+      // For now, let's assume everyone can see their own, and finance can see all (logic in storage or here)
+      const userId = (req as any).user?.role === 'finance_admin' ? undefined : (req as any).user!.id;
+      const status = req.query.status as string | undefined;
+
+      const reports = await storage.getExpenseReports(userId, status);
+      res.json(reports);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/expense-reports/:id/submit", authenticateToken, async (req, res) => {
+    try {
+      await storage.submitExpenseReport(parseInt((req.params.id as string)));
+      res.sendStatus(200);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/expense-reports/:id/approve", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.approveExpenseReport(parseInt((req.params.id as string)), (req as any).user!.id);
+      res.sendStatus(200);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/expense-reports/:id/reject", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.rejectExpenseReport(parseInt((req.params.id as string)), (req as any).user!.id, req.body.reason || "Rejected");
+      res.sendStatus(200);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/expense-reports/:id/post-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postExpenseReportToGL(parseInt((req.params.id as string)));
+      res.sendStatus(200);
+    } catch (e: any) {
+      res.status(400).send(e.message);
+    }
+  });
+
+  // AP 1099 Reporting Routes
+  app.get("/api/ap/1099/records", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const taxYear = req.query.taxYear ? parseInt(req.query.taxYear as string) : new Date().getFullYear();
+      const records = await storage.get1099Records(taxYear);
+      res.json(records);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/1099/generate", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const taxYear = req.body.taxYear || new Date().getFullYear();
+      const records = await storage.generate1099Records(taxYear);
+      res.status(201).json(records);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+
+  // AP Purchase Orders
+  app.get("/api/ap/purchase-orders", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const vendorId = req.query.vendorId ? parseInt(req.query.vendorId as string) : undefined;
+      const status = req.query.status as string | undefined;
+      const pos = await storage.getPurchaseOrders(vendorId, status);
+      res.json(pos);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/purchase-orders", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { items, ...poData } = req.body;
+      const po = {
+        ...poData,
+        createdBy: (req as any).user!.id,
+        status: 'open',
+        poNumber: `PO-${Date.now()}` // Simple generation
+      };
+      const newPO = await storage.createPurchaseOrder(po, items);
+      res.status(201).json(newPO);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/purchase-orders/:id/receive", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      // items: [{ id: number, receivedQuantity: number }]
+      await storage.receivePO(parseInt((req.params.id as string)), req.body.items);
+      res.sendStatus(200);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/purchase-orders/:id/match", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const result = await storage.matchInvoiceToPO(req.body.invoiceId, parseInt((req.params.id as string)));
+      res.json({ matched: result });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // AR Dunning
+  app.get("/api/ar/dunning/overdue-bills", authenticateToken, requireFinanceAccess, async (req, res) => {
+    const daysOverdue = req.query.daysOverdue ? Number(req.query.daysOverdue) : undefined;
+    try {
+      const bills = await storage.getOverdueBills(daysOverdue);
+      res.json(bills);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/dunning/send-notice", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { studentId, billId, level } = req.body;
+      const notice = await storage.sendDunningNotice(studentId, billId, level);
+      res.json(notice);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ar/dunning/history", authenticateToken, requireFinanceAccess, async (req, res) => {
+    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    const billId = req.query.billId ? Number(req.query.billId) : undefined;
+    try {
+      const history = await storage.getDunningHistory(studentId, billId);
+      res.json(history);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ar/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+      const payments = await storage.getArPayments(studentId);
+      res.json(payments);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { payment, allocations } = req.body;
+      const newPayment = await storage.createArPayment({
+        ...payment,
+        createdBy: (req as any).user.id
+      }, allocations);
+      res.status(201).json(newPayment);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ar/payments/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postArPaymentToGL(Number((req.params.id as string)));
+      res.json({ message: "Payment posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ar/reports/aging", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const aging = await storage.getAgingReport();
+      res.json(aging);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ========================================
+  // ACCOUNTS PAYABLE (AP) API ROUTES
+  // ========================================
+
+  app.get("/api/ap/vendors", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+      const vendors = await storage.getApVendors(isActive);
+      res.json(vendors);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/vendors", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const vendor = await storage.createApVendor(req.body);
+      res.status(201).json(vendor);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/ap/invoices", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const vendorId = req.query.vendorId ? Number(req.query.vendorId) : undefined;
+      const status = req.query.status as string | undefined;
+      const invoices = await storage.getApInvoices(vendorId, status);
+      res.json(invoices);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/invoices", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { invoice, lineItems } = req.body;
+      const newInvoice = await storage.createApInvoice({
+        ...invoice,
+        createdBy: (req as any).user.id
+      }, lineItems);
+      res.status(201).json(newInvoice);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/invoices/:id/approve", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.approveApInvoice(Number((req.params.id as string)), (req as any).user.id);
+      res.json({ message: "Invoice approved successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/invoices/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postApInvoiceToGL(Number((req.params.id as string)));
+      res.json({ message: "Invoice posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const payment = await storage.createApPayment({
+        ...req.body,
+        createdBy: (req as any).user.id
+      });
+      res.status(201).json(payment);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/ap/payments/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postApPaymentToGL(Number((req.params.id as string)));
+      res.json({ message: "Payment posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // ========================================
+  // PAYROLL API ROUTES
+  // ========================================
+
+  app.get("/api/payroll/runs", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const runs = await storage.getPayrollRuns(status);
+      res.json(runs);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/payroll/runs", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const { run, details } = req.body;
+      const payrollRun = await storage.createPayrollRun({
+        ...run,
+        processedBy: (req as any).user.id
+      }, details);
+      res.status(201).json(payrollRun);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/payroll/runs/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      await storage.postPayrollToGL(Number((req.params.id as string)));
+      res.json({ message: "Payroll posted to GL successfully" });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
   // --- Courses ---
   app.get("/api/lms/courses", authenticateToken, async (req, res) => {
     const courses = await storage.getCourses();
@@ -798,7 +1562,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/lms/courses/:id", authenticateToken, async (req, res) => {
-    const course = await storage.getCourse(Number(req.params.id));
+    const course = await storage.getCourse(Number((req.params.id as string)));
     if (!course) return res.status(404).json({ message: "Course not found" });
     res.json(course);
   });
@@ -863,7 +1627,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/lms/assignments/:id", authenticateToken, async (req, res) => {
-    const assign = await storage.getLmsAssignment(Number(req.params.id));
+    const assign = await storage.getLmsAssignment(Number((req.params.id as string)));
     if (!assign) return res.status(404).json({ message: "Not found" });
     res.json(assign);
   });
@@ -879,7 +1643,7 @@ export async function registerRoutes(
     const role = (req as any).user.role;
     if (role === 'student' || role === 'parent') return res.status(403).json({ message: "Forbidden" });
 
-    const subs = await storage.getLmsSubmissions(Number(req.params.id));
+    const subs = await storage.getLmsSubmissions(Number((req.params.id as string)));
     res.json(subs);
   });
 

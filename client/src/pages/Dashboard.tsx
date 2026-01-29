@@ -9,8 +9,10 @@ import { Progress } from "@/components/ui/progress";
 import {
   Users, GraduationCap, BookOpen, Clock, TrendingUp,
   TrendingDown, DollarSign, Calendar, CheckCircle, AlertTriangle,
-  Activity, BarChart3, PieChart, Sparkles
+  Activity, BarChart3, PieChart, Sparkles, UserCheck, Briefcase, Loader2
 } from "lucide-react";
+import { JobApplication } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -21,6 +23,10 @@ export default function Dashboard() {
 
   if (user?.role === 'teacher') {
     return <TeacherDashboard />;
+  }
+
+  if (user?.role === 'principal') {
+    return <PrincipalDashboard />;
   }
 
   if (user?.role === 'student') {
@@ -248,6 +254,160 @@ function AdminDashboard() {
             <p className="text-2xl font-bold">3</p>
             <p className="text-xs text-muted-foreground">Alerts</p>
           </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function PrincipalDashboard() {
+  const { data: stats, isLoading: statsLoading } = useAdminStats();
+  const { data: students } = useStudents();
+  const { data: feeStats } = useFeeStats();
+
+  // Fetch Recruitment Info
+  const { data: applications } = useQuery<JobApplication[]>({
+    queryKey: ["/api/hr/applications"],
+  });
+
+  const formatCurrency = (cents: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
+
+  const pendingAdmissions = students?.filter((s: any) => s.status === 'pending').length || 0;
+  const hiringPipeline = applications?.filter((a: any) => a.status === 'review' || a.status === 'interviewed').length || 0;
+
+  if (statsLoading) {
+    return (
+      <div className="p-8 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 md:p-8 space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-display font-bold text-foreground flex items-center gap-2">
+            <Activity className="h-8 w-8 text-primary" />
+            Institutional Overview
+          </h1>
+          <p className="text-muted-foreground mt-1">Strategic view of all campus operations</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge className="bg-indigo-600">Principal's View</Badge>
+        </div>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="glass-card hover:shadow-lg transition-all">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardDescription className="text-slate-500 font-medium">Monthly Revenue</CardDescription>
+            <div className="p-2 bg-green-100 rounded-lg"><DollarSign className="h-4 w-4 text-green-700" /></div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{formatCurrency((feeStats?.totalCollected || 0) / 12)}</p>
+            <p className="text-xs text-green-600 mt-1 flex items-center">
+              <TrendingUp className="h-3 w-3 mr-1" /> Estimated monthly
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card hover:shadow-lg transition-all">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardDescription className="text-slate-500 font-medium">Pending Admissions</CardDescription>
+            <div className="p-2 bg-yellow-100 rounded-lg"><GraduationCap className="h-4 w-4 text-yellow-700" /></div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{pendingAdmissions}</p>
+            <p className="text-xs text-yellow-600 mt-1">Awaiting decision</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card hover:shadow-lg transition-all">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardDescription className="text-slate-500 font-medium">Hiring Pipeline</CardDescription>
+            <div className="p-2 bg-purple-100 rounded-lg"><Briefcase className="h-4 w-4 text-purple-700" /></div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{hiringPipeline}</p>
+            <p className="text-xs text-purple-600 mt-1">Qualified candidates</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card hover:shadow-lg transition-all">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardDescription className="text-slate-500 font-medium">Student Success</CardDescription>
+            <div className="p-2 bg-blue-100 rounded-lg"><Activity className="h-4 w-4 text-blue-700" /></div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">92%</p>
+            <p className="text-xs text-blue-600 mt-1">Average Passing Rate</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <PieChart className="h-5 w-5 text-primary" />
+                Departmental Health
+              </CardTitle>
+              <Badge variant="outline">Year to Date</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {[
+                { name: "Academics", score: 95, color: "bg-blue-500" },
+                { name: "Finance", score: 82, color: "bg-green-500" },
+                { name: "Recruitment", score: 64, color: "bg-purple-500" },
+                { name: "Facilities", score: 88, color: "bg-orange-500" }
+              ].map(dept => (
+                <div key={dept.name} className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="font-medium">{dept.name}</span>
+                    <span className="text-muted-foreground">{dept.score}%</span>
+                  </div>
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div className={`${dept.color} h-full transition-all duration-1000`} style={{ width: `${dept.score}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              Recent HR Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {applications?.slice(0, 4).map(app => (
+                <div key={app.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback>{app.firstName[0]}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-medium">{app.firstName} {app.lastName}</p>
+                      <p className="text-xs text-muted-foreground">Applied for Faculty</p>
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="text-[10px] uppercase">{app.status}</Badge>
+                </div>
+              ))}
+              {(applications?.length || 0) === 0 && (
+                <p className="text-center py-8 text-sm text-muted-foreground italic">No recent HR activity</p>
+              )}
+            </div>
+          </CardContent>
         </Card>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 // Types are inferred or manually defined if missing from schema export
@@ -27,9 +28,24 @@ import {
 } from "@/components/ui/accordion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, FileText, Video, HelpCircle, ChevronLeft, Download } from "lucide-react";
+import {
+    Loader2, FileText, Video, HelpCircle, ChevronLeft, Download,
+    Upload, CheckCircle, Send
+} from "lucide-react";
+import {
+    Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 
 function ModuleItem({ module }: { module: CourseModule }) {
+    const { user } = useAuth();
+    const { toast } = useToast();
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submissionContent, setSubmissionContent] = useState("");
+    const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+
     const iconMap: Record<string, any> = {
         pdf: FileText,
         video: Video,
@@ -37,6 +53,37 @@ function ModuleItem({ module }: { module: CourseModule }) {
         assignment: FileText
     };
     const Icon = iconMap[module.type] || FileText;
+
+    const handleSubmit = async () => {
+        if (!submissionContent.trim()) {
+            toast({ title: "Error", description: "Please enter your submission", variant: "destructive" });
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const res = await fetch("/api/lms/submissions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    moduleId: module.id,
+                    studentId: user?.id, // Note: Should ideally be student detail ID not user ID
+                    content: submissionContent,
+                    submittedAt: new Date().toISOString()
+                }),
+            });
+
+            if (!res.ok) throw new Error("Submission failed");
+
+            toast({ title: "Success", description: "Assignment submitted successfully!" });
+            setShowSubmitDialog(false);
+            setSubmissionContent("");
+        } catch (error) {
+            toast({ title: "Error", description: "Failed to submit assignment", variant: "destructive" });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     return (
         <div className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-md border border-transparent hover:border-slate-200 transition-colors group">
@@ -49,9 +96,44 @@ function ModuleItem({ module }: { module: CourseModule }) {
                     <p className="text-xs text-muted-foreground capitalize">{module.type}</p>
                 </div>
             </div>
-            <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100">
-                Start
-            </Button>
+
+            <div className="flex items-center gap-2">
+                {module.type === 'assignment' && user?.role === 'student' && (
+                    <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="opacity-0 group-hover:opacity-100 border-indigo-200 text-indigo-700 hover:bg-indigo-50">
+                                <Upload className="h-4 w-4 mr-1" /> Submit
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Submit Assignment: {module.title}</DialogTitle>
+                                <DialogDescription>
+                                    Enter your response or a link to your work (Git, Google Drive, etc.)
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="py-4">
+                                <Textarea
+                                    placeholder="Write your submission content here..."
+                                    className="min-h-[150px]"
+                                    value={submissionContent}
+                                    onChange={(e) => setSubmissionContent(e.target.value)}
+                                />
+                            </div>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>Cancel</Button>
+                                <Button onClick={handleSubmit} disabled={isSubmitting}>
+                                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                                    Submit Assignment
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                )}
+                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100">
+                    {module.type === 'video' ? 'Watch' : 'View'}
+                </Button>
+            </div>
         </div>
     );
 }

@@ -13,6 +13,7 @@ type AuthContextType = {
   loginMutation: any;
   logoutMutation: any;
   changePasswordMutation: any; // <--- Added
+  googleLoginMutation: any;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -55,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("token", data.token);
       }
       queryClient.setQueryData([api.auth.me.path], data.user);
-      
+
       toast({
         title: "Welcome back!",
         description: `Logged in as ${data.user.name}`,
@@ -82,9 +83,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const token = localStorage.getItem("token");
       const res = await fetch("/api/auth/change-password", {
         method: "POST",
-        headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}` 
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify(data),
       });
@@ -120,6 +121,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const googleLoginMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Google login failed");
+      }
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      localStorage.setItem("token", data.token);
+      queryClient.setQueryData([api.auth.me.path], data.user);
+      setLocation("/");
+      toast({
+        title: "Welcome back!",
+        description: `Logged in with Google as ${data.user.name}`
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Google Login Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <AuthContext.Provider
       value={{
@@ -129,6 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginMutation,
         logoutMutation,
         changePasswordMutation,
+        googleLoginMutation,
       }}
     >
       {children}
