@@ -3,11 +3,21 @@ import { api } from "@shared/routes";
 import { type InsertClass } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("token");
+  return {
+    "Content-Type": "application/json",
+    "Authorization": token ? `Bearer ${token}` : "",
+  };
+};
+
 export function useClasses() {
   return useQuery({
     queryKey: [api.classes.list.path],
     queryFn: async () => {
-      const res = await fetch(api.classes.list.path);
+      const res = await fetch(api.classes.list.path, {
+        headers: getAuthHeaders(),
+      });
       if (!res.ok) throw new Error("Failed to fetch classes");
       return api.classes.list.responses[200].parse(await res.json());
     },
@@ -22,7 +32,7 @@ export function useCreateClass() {
     mutationFn: async (data: InsertClass) => {
       const res = await fetch(api.classes.create.path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to create class");

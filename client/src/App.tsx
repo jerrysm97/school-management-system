@@ -1,4 +1,4 @@
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -12,10 +12,68 @@ import StudentsPage from "@/pages/StudentsPage";
 import TeachersPage from "@/pages/TeachersPage";
 import ClassesPage from "@/pages/ClassesPage";
 import AttendancePage from "@/pages/AttendancePage";
-import { Loader2 } from "lucide-react";
+import ChangePasswordPage from "@/pages/ChangePasswordPage";
+import FeesPage from "@/pages/FeesPage";
+import ExamsPage from "@/pages/ExamsPage";
+import TimetablePage from "@/pages/TimetablePage";
+import SettingsPage from "@/pages/SettingsPage";
+import FinanceDashboard from "@/pages/finance/FinanceDashboard";
+import IncomePage from "@/pages/finance/IncomePage";
+import ExpensesPage from "@/pages/finance/ExpensesPage";
+import AssetsPage from "@/pages/finance/AssetsPage";
+import BudgetPage from "@/pages/finance/BudgetPage";
+import StudentLedgerPage from "@/pages/finance/StudentLedgerPage";
+import RecruitmentDashboard from "@/pages/hr/RecruitmentDashboard";
+import StaffDirectory from "@/pages/hr/StaffDirectory";
+import AdmissionForm from "@/pages/public/AdmissionForm";
+import AdmissionDashboard from "@/pages/admissions/AdmissionDashboard";
+import LmsDashboard from "@/pages/lms/LmsDashboard";
+import CourseView from "@/pages/lms/CourseView";
+import { Loader2, AlertCircle } from "lucide-react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <div className="max-w-md w-full text-center space-y-4">
+            <div className="mx-auto w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+              <AlertCircle className="h-6 w-6 text-red-600" />
+            </div>
+            <h2 className="text-xl font-bold text-foreground">Something went wrong</h2>
+            <p className="text-sm text-muted-foreground">
+              {this.state.error?.message || "An unexpected error occurred. Please try refreshing."}
+            </p>
+            <Button onClick={() => window.location.reload()} variant="outline">
+              Reload Application
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, isLoading } = useAuth();
+  const [location] = useLocation();
 
   if (isLoading) {
     return (
@@ -27,6 +85,22 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (!user) {
     return <Redirect to="/auth" />;
+  }
+
+  // FORCE CHANGE PASSWORD LOGIC
+  if (user.mustChangePassword && location !== "/change-password") {
+    return <Redirect to="/change-password" />;
+  }
+
+  // If on change-password page but don't need to be there (optional, but good UX)
+  if (!user.mustChangePassword && location === "/change-password") {
+    // You can remove this block if you want to allow voluntary password changes via this route
+    // return <Redirect to="/" />;
+  }
+
+  // If on change password page, don't show Sidebar
+  if (location === "/change-password") {
+    return <Component />;
   }
 
   return (
@@ -43,10 +117,13 @@ function Router() {
   return (
     <Switch>
       <Route path="/auth" component={AuthPage} />
-      
+
       {/* Protected Routes */}
       <Route path="/">
         <ProtectedRoute component={Dashboard} />
+      </Route>
+      <Route path="/change-password">
+        <ProtectedRoute component={ChangePasswordPage} />
       </Route>
       <Route path="/students">
         <ProtectedRoute component={StudentsPage} />
@@ -60,7 +137,61 @@ function Router() {
       <Route path="/attendance">
         <ProtectedRoute component={AttendancePage} />
       </Route>
-      
+      <Route path="/fees">
+        <ProtectedRoute component={FeesPage} />
+      </Route>
+      <Route path="/exams">
+        <ProtectedRoute component={ExamsPage} />
+      </Route>
+      <Route path="/timetable">
+        <ProtectedRoute component={TimetablePage} />
+      </Route>
+      <Route path="/settings">
+        <ProtectedRoute component={SettingsPage} />
+      </Route>
+
+      {/* Finance Module Routes */}
+      <Route path="/finance/dashboard">
+        <ProtectedRoute component={FinanceDashboard} />
+      </Route>
+      <Route path="/finance/income">
+        <ProtectedRoute component={IncomePage} />
+      </Route>
+      <Route path="/finance/expenses">
+        <ProtectedRoute component={ExpensesPage} />
+      </Route>
+      <Route path="/finance/assets">
+        <ProtectedRoute component={AssetsPage} />
+      </Route>
+      <Route path="/finance/budget">
+        <ProtectedRoute component={BudgetPage} />
+      </Route>
+      <Route path="/finance/student-ledger">
+        <ProtectedRoute component={StudentLedgerPage} />
+      </Route>
+
+      {/* HR Module Routes */}
+      <Route path="/hr/recruitment">
+        <ProtectedRoute component={RecruitmentDashboard} />
+      </Route>
+      <Route path="/hr/staff">
+        <ProtectedRoute component={StaffDirectory} />
+      </Route>
+
+      {/* Admission Routes */}
+      <Route path="/admissions/apply" component={AdmissionForm} />
+      <Route path="/admissions/dashboard">
+        <ProtectedRoute component={AdmissionDashboard} />
+      </Route>
+
+      {/* LMS Routes */}
+      <Route path="/lms">
+        <ProtectedRoute component={LmsDashboard} />
+      </Route>
+      <Route path="/lms/course/:id">
+        <ProtectedRoute component={CourseView} />
+      </Route>
+
       {/* Fallback */}
       <Route component={NotFound} />
     </Switch>
@@ -72,8 +203,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <Toaster />
-          <Router />
+          <ErrorBoundary>
+            <Toaster />
+            <Router />
+          </ErrorBoundary>
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>

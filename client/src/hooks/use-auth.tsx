@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useContext, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { insertUserSchema, type User } from "@shared/schema";
-import { api, loginSchema, type LoginRequest } from "@shared/routes";
+import { type User } from "@shared/schema";
+import { api, loginSchema } from "@shared/routes";
 import { z } from "zod";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -12,6 +12,7 @@ type AuthContextType = {
   error: Error | null;
   loginMutation: any;
   logoutMutation: any;
+  changePasswordMutation: any; // <--- Added
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -24,10 +25,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: user, error, isLoading } = useQuery({
     queryKey: [api.auth.me.path],
     queryFn: async () => {
-      const res = await fetch(api.auth.me.path);
+      const token = localStorage.getItem("token");
+      const res = await fetch(api.auth.me.path, {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+      });
       if (res.status === 401) return null;
       if (!res.ok) throw new Error("Failed to fetch user");
-      return api.auth.me.responses[200].parse(await res.json());
+      return await res.json();
     },
     retry: false,
   });
@@ -42,15 +48,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         throw new Error("Invalid credentials");
       }
-      return api.auth.login.responses[200].parse(await res.json());
+      return await res.json();
     },
     onSuccess: (data) => {
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+      }
       queryClient.setQueryData([api.auth.me.path], data.user);
+      
       toast({
         title: "Welcome back!",
         description: `Logged in as ${data.user.name}`,
       });
-      setLocation("/");
+
+      // Redirect based on forced password change
+      if (data.user.mustChangePassword) {
+        setLocation("/change-password");
+      } else {
+        setLocation("/");
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -61,10 +77,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const changePasswordMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}` 
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to change password");
+      }
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Password updated! Please login again." });
+      // Logout logic to force re-login
+      localStorage.removeItem("token");
+      queryClient.setQueryData([api.auth.me.path], null);
+      setLocation("/auth");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      // In a real app, hit a logout endpoint. For now, we clear query cache.
-      // await fetch("/api/auth/logout", { method: "POST" });
+      localStorage.removeItem("token");
     },
     onSuccess: () => {
       queryClient.setQueryData([api.auth.me.path], null);
@@ -80,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: error as Error | null,
         loginMutation,
         logoutMutation,
+        changePasswordMutation,
       }}
     >
       {children}

@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
+const PORT = 5001;
 const app = express();
 const httpServer = createServer(app);
 
@@ -66,18 +67,30 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    // Enhanced Logging
+    const errorDetails = {
+      message: message,
+      stack: err.stack,
+      path: _req.path,
+      method: _req.method,
+      body: _req.body,
+      user: (_req as any).user ? (_req as any).user.username : 'anonymous'
+    };
+
+    console.error("Industrial Error Log:", JSON.stringify(errorDetails, null, 2));
 
     if (res.headersSent) {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    // In production, don't leak stack traces
+    const response = process.env.NODE_ENV === 'production'
+      ? { message }
+      : { message, stack: err.stack };
+
+    return res.status(status).json(response);
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -85,19 +98,16 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
+  const port = parseInt(process.env.PORT || "5001", 10);
+
+  // FIX APPLIED BELOW: Changed 0.0.0.0 to 127.0.0.1
   // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+  // Default to 5000 if not specified.
+
+
+  // FIX: Use simple arguments (port, host) instead of an object.
+  // We removed "reusePort: true" which was crashing your Mac.
+  httpServer.listen(port, "127.0.0.1", () => {
+    log(`serving on port ${port}`);
+  });
 })();

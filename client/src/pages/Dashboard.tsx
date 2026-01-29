@@ -1,27 +1,44 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useAdminStats } from "@/hooks/use-stats";
-import { StatsCard } from "@/components/common/StatsCard";
-import { Users, GraduationCap, BookOpen, Clock } from "lucide-react";
+import { useStudents } from "@/hooks/use-students";
+import { useFeeStats } from "@/hooks/use-fees";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Progress } from "@/components/ui/progress";
+import {
+  Users, GraduationCap, BookOpen, Clock, TrendingUp,
+  TrendingDown, DollarSign, Calendar, CheckCircle, AlertTriangle,
+  Activity, BarChart3, PieChart, Sparkles
+} from "lucide-react";
 
 export default function Dashboard() {
   const { user } = useAuth();
-  
-  if (user?.role === 'admin') {
+
+  if (user?.role === 'admin' || user?.role === 'main_admin') {
     return <AdminDashboard />;
+  }
+
+  if (user?.role === 'teacher') {
+    return <TeacherDashboard />;
+  }
+
+  if (user?.role === 'student') {
+    return <StudentDashboard />;
   }
 
   return (
     <div className="p-8">
       <h1 className="text-3xl font-display font-bold mb-2">Welcome back, {user?.name}!</h1>
       <p className="text-muted-foreground">Here is an overview of your activity.</p>
-      
+
       <div className="mt-8 p-12 border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center text-center">
         <div className="h-16 w-16 bg-muted rounded-full flex items-center justify-center mb-4">
           <Clock className="h-8 w-8 text-muted-foreground" />
         </div>
         <h3 className="text-lg font-semibold">Coming Soon</h3>
         <p className="text-muted-foreground max-w-md mt-2">
-          Specific dashboards for {user?.role}s are under construction. Please use the sidebar to navigate to other modules.
+          Specific dashboards for {user?.role}s are under construction.
         </p>
       </div>
     </div>
@@ -30,61 +47,296 @@ export default function Dashboard() {
 
 function AdminDashboard() {
   const { data: stats, isLoading } = useAdminStats();
+  const { data: students } = useStudents();
+  const { data: feeStats } = useFeeStats();
 
   if (isLoading) {
-    return <div className="p-8">Loading dashboard stats...</div>;
+    return (
+      <div className="p-8 flex items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading dashboard...</div>
+      </div>
+    );
   }
+
+  const formatCurrency = (cents: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
+
+  const recentStudents = students?.slice(0, 5) || [];
+  const collectionRate = feeStats ? Math.round((feeStats.totalCollected / (feeStats.totalCollected + feeStats.totalPending + feeStats.totalOverdue || 1)) * 100) : 0;
 
   return (
     <div className="p-6 md:p-8 space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h1 className="text-3xl font-display font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Overview of the school's performance.</p>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-display font-bold text-foreground flex items-center gap-2">
+            <Sparkles className="h-8 w-8 text-primary" />
+            Dashboard
+          </h1>
+          <p className="text-muted-foreground mt-1">Welcome back! Here's your institution overview.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+            <Activity className="h-3 w-3 mr-1" /> System Online
+          </Badge>
+        </div>
       </div>
 
+      {/* Stats Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <StatsCard
-          title="Total Students"
-          value={stats?.totalStudents || 0}
-          icon={GraduationCap}
-          trend="+12% from last term"
-          color="blue"
-        />
-        <StatsCard
-          title="Total Teachers"
-          value={stats?.totalTeachers || 0}
-          icon={Users}
-          color="purple"
-        />
-        <StatsCard
-          title="Active Classes"
-          value={stats?.totalClasses || 0}
-          icon={BookOpen}
-          color="green"
-        />
-        <StatsCard
-          title="Attendance Rate"
-          value="94%"
-          icon={Clock}
-          description="Average daily attendance"
-          color="orange"
-        />
+        <Card className="glass-card border-l-4 border-l-blue-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardDescription className="font-medium text-slate-500">Total Students</CardDescription>
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <GraduationCap className="h-4 w-4 text-blue-700" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-slate-900">{stats?.totalStudents || 0}</p>
+            <p className="text-xs text-emerald-600 mt-1 flex items-center font-medium bg-emerald-50 w-fit px-1.5 py-0.5 rounded-full">
+              <TrendingUp className="h-3 w-3 mr-1" /> +12% growth
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card border-l-4 border-l-purple-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardDescription className="font-medium text-slate-500">Total Teachers</CardDescription>
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <Users className="h-4 w-4 text-purple-700" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-slate-900">{stats?.totalTeachers || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Active faculty members</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card border-l-4 border-l-green-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardDescription className="font-medium text-slate-500">Active Classes</CardDescription>
+            <div className="p-2 bg-green-100 rounded-lg">
+              <BookOpen className="h-4 w-4 text-green-700" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-slate-900">{stats?.totalClasses || 0}</p>
+            <p className="text-xs text-slate-500 mt-1">Running this term</p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card border-l-4 border-l-orange-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardDescription className="font-medium text-slate-500">Attendance Rate</CardDescription>
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <Clock className="h-4 w-4 text-orange-700" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-slate-900">94%</p>
+            <p className="text-xs text-emerald-600 mt-1 flex items-center font-medium bg-emerald-50 w-fit px-1.5 py-0.5 rounded-full">
+              <TrendingUp className="h-3 w-3 mr-1" /> +2% this week
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Placeholder for charts */}
-        <div className="h-[300px] bg-card rounded-xl border p-6 shadow-sm">
-          <h3 className="font-semibold mb-4">Attendance Trends</h3>
-          <div className="h-full flex items-center justify-center text-muted-foreground bg-muted/20 rounded-lg">
-            Chart Placeholder
+      {/* Charts and Activity Section */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Fee Collection Overview */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Financial Overview
+            </CardTitle>
+            <CardDescription>Fee collection status this term</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="text-center p-4 bg-green-50 rounded-lg border border-green-100">
+                <p className="text-2xl font-bold text-green-700">{formatCurrency(feeStats?.totalCollected || 0)}</p>
+                <p className="text-xs text-green-600 mt-1">Collected</p>
+              </div>
+              <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-100">
+                <p className="text-2xl font-bold text-yellow-700">{formatCurrency(feeStats?.totalPending || 0)}</p>
+                <p className="text-xs text-yellow-600 mt-1">Pending</p>
+              </div>
+              <div className="text-center p-4 bg-red-50 rounded-lg border border-red-100">
+                <p className="text-2xl font-bold text-red-700">{formatCurrency(feeStats?.totalOverdue || 0)}</p>
+                <p className="text-xs text-red-600 mt-1">Overdue</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Collection Rate</span>
+                <span className="font-medium">{collectionRate}%</span>
+              </div>
+              <Progress value={collectionRate} className="h-2" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent Students */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <GraduationCap className="h-5 w-5 text-primary" />
+              Recent Students
+            </CardTitle>
+            <CardDescription>Latest admissions</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {recentStudents.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No students yet</p>
+            ) : (
+              recentStudents.map((student: any) => (
+                <div key={student.id} className="flex items-center gap-3">
+                  <Avatar className="h-9 w-9">
+                    <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
+                      {student.user.name.charAt(0)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{student.user.name}</p>
+                    <p className="text-xs text-muted-foreground">{student.admissionNo}</p>
+                  </div>
+                  <Badge variant={student.status === 'approved' ? 'default' : 'secondary'} className="text-xs">
+                    {student.status}
+                  </Badge>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Stats Row */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="p-4 flex items-center gap-4">
+          <div className="p-3 bg-green-100 rounded-full">
+            <CheckCircle className="h-5 w-5 text-green-600" />
           </div>
-        </div>
-        <div className="h-[300px] bg-card rounded-xl border p-6 shadow-sm">
-          <h3 className="font-semibold mb-4">Fee Collection</h3>
-          <div className="h-full flex items-center justify-center text-muted-foreground bg-muted/20 rounded-lg">
-            Chart Placeholder
+          <div>
+            <p className="text-2xl font-bold">{students?.filter((s: any) => s.status === 'approved').length || 0}</p>
+            <p className="text-xs text-muted-foreground">Approved Students</p>
           </div>
-        </div>
+        </Card>
+        <Card className="p-4 flex items-center gap-4">
+          <div className="p-3 bg-yellow-100 rounded-full">
+            <Clock className="h-5 w-5 text-yellow-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold">{students?.filter((s: any) => s.status === 'pending').length || 0}</p>
+            <p className="text-xs text-muted-foreground">Pending Approval</p>
+          </div>
+        </Card>
+        <Card className="p-4 flex items-center gap-4">
+          <div className="p-3 bg-blue-100 rounded-full">
+            <Calendar className="h-5 w-5 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold">12</p>
+            <p className="text-xs text-muted-foreground">Upcoming Events</p>
+          </div>
+        </Card>
+        <Card className="p-4 flex items-center gap-4">
+          <div className="p-3 bg-purple-100 rounded-full">
+            <AlertTriangle className="h-5 w-5 text-purple-600" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold">3</p>
+            <p className="text-xs text-muted-foreground">Alerts</p>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function TeacherDashboard() {
+  const { user } = useAuth();
+
+  return (
+    <div className="p-6 md:p-8 space-y-8">
+      <div>
+        <h1 className="text-3xl font-display font-bold">Welcome, {user?.name}!</h1>
+        <p className="text-muted-foreground mt-1">Here's your teaching overview for today.</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-blue-700">My Classes</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-bold text-blue-700">4</p>
+            <p className="text-xs text-blue-600 mt-1">Active this term</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-50 to-green-100/50 border-green-200">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-green-700">Total Students</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-bold text-green-700">86</p>
+            <p className="text-xs text-green-600 mt-1">Across all classes</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-orange-50 to-orange-100/50 border-orange-200">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-orange-700">Today's Classes</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-bold text-orange-700">3</p>
+            <p className="text-xs text-orange-600 mt-1">Scheduled for today</p>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function StudentDashboard() {
+  const { user } = useAuth();
+
+  return (
+    <div className="p-6 md:p-8 space-y-8">
+      <div>
+        <h1 className="text-3xl font-display font-bold">Welcome, {user?.name}!</h1>
+        <p className="text-muted-foreground mt-1">Here's your academic overview.</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-blue-700">Current GPA</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-bold text-blue-700">3.8</p>
+            <p className="text-xs text-blue-600 mt-1 flex items-center">
+              <TrendingUp className="h-3 w-3 mr-1" /> +0.2 from last term
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-50 to-green-100/50 border-green-200">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-green-700">Attendance</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-bold text-green-700">96%</p>
+            <p className="text-xs text-green-600 mt-1">This semester</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-purple-50 to-purple-100/50 border-purple-200">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-purple-700">Credits</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-4xl font-bold text-purple-700">45</p>
+            <p className="text-xs text-purple-600 mt-1">Completed</p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
