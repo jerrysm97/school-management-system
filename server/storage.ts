@@ -14,10 +14,11 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
 
   // Students
-  getStudents(classId?: number): Promise<(Student & { user: User, class: Class | null })[]>;
+  getStudents(classId?: number, status?: "pending" | "approved" | "rejected"): Promise<(Student & { user: User, class: Class | null })[]>;
   getStudent(id: number): Promise<(Student & { user: User }) | undefined>;
   getStudentByUserId(userId: number): Promise<Student | undefined>;
   createStudent(student: InsertStudent): Promise<Student>;
+  updateStudentStatus(id: number, status: "approved" | "rejected"): Promise<void>;
 
   // Teachers
   getTeachers(): Promise<(Teacher & { user: User })[]>;
@@ -55,7 +56,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Students
-  async getStudents(classId?: number): Promise<(Student & { user: User, class: Class | null })[]> {
+  async getStudents(classId?: number, status?: "pending" | "approved" | "rejected"): Promise<(Student & { user: User, class: Class | null })[]> {
     const query = db
       .select({
         student: students,
@@ -66,12 +67,20 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(users, eq(students.userId, users.id))
       .leftJoin(classes, eq(students.classId, classes.id));
 
-    if (classId) {
-      query.where(eq(students.classId, classId));
+    const conditions = [];
+    if (classId) conditions.push(eq(students.classId, classId));
+    if (status) conditions.push(eq(students.status, status));
+
+    if (conditions.length > 0) {
+      query.where(and(...conditions));
     }
 
     const rows = await query.execute();
     return rows.map(row => ({ ...row.student, user: row.user, class: row.class }));
+  }
+
+  async updateStudentStatus(id: number, status: "approved" | "rejected"): Promise<void> {
+    await db.update(students).set({ status }).where(eq(students.id, id));
   }
 
   async getStudent(id: number): Promise<(Student & { user: User }) | undefined> {

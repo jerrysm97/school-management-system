@@ -57,6 +57,13 @@ export async function registerRoutes(
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    if (user.role === 'student') {
+      const student = await storage.getStudentByUserId(user.id);
+      if (student && student.status !== 'approved') {
+        return res.status(403).json({ message: `Account ${student.status}. Please contact administrator.` });
+      }
+    }
+
     const token = jwt.sign({ id: user.id, role: user.role, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
     
     // Don't send password back
@@ -88,8 +95,16 @@ export async function registerRoutes(
   // --- Students ---
   app.get(api.students.list.path, authenticateToken, async (req, res) => {
     const classId = req.query.classId ? Number(req.query.classId) : undefined;
-    const students = await storage.getStudents(classId);
+    const status = req.query.status as any;
+    const students = await storage.getStudents(classId, status);
     res.json(students);
+  });
+
+  app.post(api.students.approve.path, authenticateToken, async (req, res) => {
+    if ((req as any).user.role !== 'admin') return res.sendStatus(403);
+    const { status } = req.body;
+    await storage.updateStudentStatus(Number(req.params.id), status);
+    res.json({ message: `Student ${status}` });
   });
 
   app.post(api.students.create.path, authenticateToken, async (req, res) => {

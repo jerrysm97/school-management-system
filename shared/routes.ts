@@ -91,6 +91,16 @@ export const api = {
         400: errorSchemas.validation,
       },
     },
+    approve: {
+      method: 'POST' as const,
+      path: '/api/students/:id/approve',
+      input: z.object({ status: z.enum(['approved', 'rejected']) }),
+      responses: {
+        200: z.object({ message: z.string() }),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+      },
+    },
   },
   teachers: {
     list: {

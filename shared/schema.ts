@@ -9,6 +9,7 @@ export const roleEnum = pgEnum("role", ["admin", "teacher", "student", "parent"]
 export const genderEnum = pgEnum("gender", ["male", "female", "other"]);
 export const attendanceStatusEnum = pgEnum("attendance_status", ["present", "absent", "late", "excused"]);
 export const feeStatusEnum = pgEnum("fee_status", ["paid", "pending", "overdue"]);
+export const studentStatusEnum = pgEnum("student_status", ["pending", "approved", "rejected"]);
 
 // Users Table
 export const users = pgTable("users", {
@@ -56,6 +57,7 @@ export const students = pgTable("students", {
   phone: text("phone"),
   address: text("address"),
   parentId: integer("parent_id").references(() => parents.id),
+  status: studentStatusEnum("status").default("pending").notNull(),
 });
 
 // Subjects Table
