@@ -18,7 +18,9 @@ import {
   FileText,
   Library,
   UserPlus,
-  Menu
+  Menu,
+  Check,
+  Calendar
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -35,8 +37,13 @@ const navItems = {
   // Level 0: Main Admin - Full access
   main_admin: [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
+    { label: "User Management", href: "/users", icon: UserCircle },
     { label: "LMS", href: "/lms", icon: Library },
     { label: "Financial Control", href: "/finance/dashboard", icon: Banknote },
+    { label: "Fee Structures", href: "/finance/fee-structures", icon: FileText },
+    { label: "Fee Assignment", href: "/finance/fee-assignment", icon: Check },
+    { label: "Payment Plans", href: "/finance/payment-plans", icon: Calendar },
+    { label: "Scholarships", href: "/finance/scholarships", icon: GraduationCap },
     { label: "Student Ledger", href: "/finance/student-ledger", icon: FileText },
     { label: "Students", href: "/students", icon: GraduationCap },
     { label: "Teachers", href: "/teachers", icon: Users },
@@ -53,6 +60,10 @@ const navItems = {
   // Legacy 'admin' maps to main_admin
   admin: [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
+    { label: "Fee Structures", href: "/finance/fee-structures", icon: Banknote },
+    { label: "Fee Assignment", href: "/finance/fee-assignment", icon: Check },
+    { label: "Payment Plans", href: "/finance/payment-plans", icon: Calendar },
+    { label: "Scholarships", href: "/finance/scholarships", icon: GraduationCap },
     { label: "Students", href: "/students", icon: GraduationCap },
     { label: "Teachers", href: "/teachers", icon: Users },
     { label: "Classes", href: "/classes", icon: BookOpen },
@@ -67,6 +78,10 @@ const navItems = {
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
     { label: "LMS", href: "/lms", icon: Library },
     { label: "Financial Control", href: "/finance/dashboard", icon: Banknote },
+    { label: "Fee Structures", href: "/finance/fee-structures", icon: Banknote },
+    { label: "Fee Assignment", href: "/finance/fee-assignment", icon: Banknote },
+    { label: "Payment Plans", href: "/finance/payment-plans", icon: Banknote },
+    { label: "Scholarships", href: "/finance/scholarships", icon: GraduationCap },
     { label: "Students", href: "/students", icon: GraduationCap },
     { label: "Teachers", href: "/teachers", icon: Users },
     { label: "Classes", href: "/classes", icon: BookOpen },
@@ -80,6 +95,10 @@ const navItems = {
   accountant: [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
     { label: "Financial Control", href: "/finance/dashboard", icon: Banknote },
+    { label: "Fee Structures", href: "/finance/fee-structures", icon: Banknote },
+    { label: "Fee Assignment", href: "/finance/fee-assignment", icon: Check },
+    { label: "Payment Plans", href: "/finance/payment-plans", icon: Calendar },
+    { label: "Scholarships", href: "/finance/scholarships", icon: GraduationCap },
     { label: "Students", href: "/students", icon: GraduationCap },
     { label: "Fees", href: "/fees", icon: Banknote },
     { label: "Student Ledger", href: "/finance/student-ledger", icon: FileText },

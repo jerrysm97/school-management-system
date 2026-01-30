@@ -44,18 +44,82 @@ import {
   arAutoBillRules, type InsertArAutoBillRule, type ArAutoBillRule,
   // AP Module Types
   apVendors, apInvoices, apInvoiceLineItems, apPayments, apExpenseReports, apExpenseReportItems, ap1099Records,
-  purchaseOrders, poLineItems,
   type InsertApVendor, type ApVendor,
   type InsertApInvoice, type ApInvoice,
   type InsertApPayment, type ApPayment,
-  type InsertPurchaseOrder, type PurchaseOrder,
-  type InsertPoLineItem, type PoLineItem,
+
   // Payroll Types
   payrollRuns, payrollDetails,
   type InsertPayrollRun, type PayrollRun,
-  type InsertPayrollDetail, type PayrollDetail
+  type InsertPayrollDetail, type PayrollDetail,
+
+  // Programs, Departments, Donors Types
+  programs, departments, donors, donations,
+  type InsertProgram, type Program,
+  type InsertDepartment, type Department,
+  type InsertDonor, type Donor,
+  type InsertDonation, type Donation,
+
+  // Endowment Types
+  endowmentFunds, investments, investmentTransactions,
+  type InsertEndowmentFund, type EndowmentFund,
+  type InsertInvestment, type Investment,
+  type InsertInvestmentTransaction, type InvestmentTransaction,
+
+  // Asset/Depreciation Types
+  depreciationSchedules, depreciationEntries, assetDisposals,
+  type InsertDepreciationSchedule, type DepreciationSchedule,
+  type InsertDepreciationEntry, type DepreciationEntry,
+  type InsertAssetDisposal, type AssetDisposal,
+
+  // Timesheet and W-2 Types
+  timesheets, w2Records,
+  type InsertTimesheet, type Timesheet,
+  type InsertW2Record, type W2Record,
+
+  // Payment Plans
+  paymentPlans, paymentPlanInstallments,
+  type PaymentPlan, type InsertPaymentPlan,
+  type PaymentPlanInstallment, type InsertPaymentPlanInstallment,
+
+  // Financial Aid
+  financialAidAwards,
+  type InsertFinAidAward, type FinAidAward,
+
+  // Phase 2: Academic & Fee Foundation
+  academicYears, semesters, studentEnrollments,
+  feeCategories, feeStructuresv2, creditBasedFees, programFeeAdjustments, studentFees,
+  type AcademicYear, type InsertAcademicYear,
+  type Semester, type InsertSemester,
+  type StudentEnrollment, type InsertStudentEnrollment,
+  type FeeCategory, type InsertFeeCategory,
+  type FeeStructureV2, type InsertFeeStructureV2,
+  type CreditBasedFee, type InsertCreditBasedFee,
+  type ProgramFeeAdjustment, type InsertProgramFeeAdjustment,
+  type StudentFee, type InsertStudentFee,
+
+  // Phase 3: Payments & Expenses
+  payments, paymentAllocations, refunds, lateFees,
+  scholarshipTypes, scholarshipApplications, studentScholarships, scholarshipDisbursements,
+  expenseCategories, vendors, expenses, purchaseOrders, purchaseOrderItems,
+
+  type Payment, type InsertPayment,
+  type PaymentAllocation, type InsertPaymentAllocation,
+  type Refund, type InsertRefund,
+  type LateFee, type InsertLateFee,
+
+  type ScholarshipType, type InsertScholarshipType,
+  type ScholarshipApplication, type InsertScholarshipApplication,
+  type StudentScholarship, type InsertStudentScholarship,
+  type ScholarshipDisbursement, type InsertScholarshipDisbursement,
+
+  type ExpenseCategory, type InsertExpenseCategory,
+  type Vendor, type InsertVendor,
+  type Expense, type InsertExpense,
+  type PurchaseOrder, type InsertPurchaseOrder,
+  type PurchaseOrderItem, type InsertPurchaseOrderItem
 } from "@shared/schema";
-import { eq, and, or, desc, sql, sum } from "drizzle-orm";
+import { eq, and, or, desc, sql, sum, lt, ne, isNull, isNotNull } from "drizzle-orm";
 
 export interface IStorage {
   // Users & Auth
@@ -63,6 +127,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByIdentifier(identifier: string): Promise<User | undefined>;
   getUserByGoogleId(googleId: string): Promise<User | undefined>;
+
   createUser(user: InsertUser): Promise<User>;
   updateUserPassword(id: number, password: string): Promise<void>;
 
@@ -93,8 +158,10 @@ export interface IStorage {
   // Fees
   getFees(studentId?: number): Promise<any[]>;
   createFee(fee: any): Promise<any>;
+  bulkCreateFees(feesData: any[]): Promise<any[]>;
   updateFeeStatus(id: number, status: 'paid' | 'pending' | 'overdue'): Promise<any>;
   getFeeStats(): Promise<{ totalCollected: number; totalPending: number; totalOverdue: number }>;
+  getOverdueFeesWithoutPenalty(): Promise<any[]>;
 
   // Exams
   getExams(classId?: number): Promise<any[]>;
@@ -103,8 +170,34 @@ export interface IStorage {
   // Marks
   getMarks(examId?: number, studentId?: number): Promise<any[]>;
   createMark(mark: any): Promise<any>;
-  updateMark(id: number, score: number): Promise<any>;
+  // Phase 3: Payments & Expenses
+  // Payments
+  createPayment(payment: InsertPayment): Promise<Payment>;
+  getPayment(id: number): Promise<Payment | undefined>;
+  getPaymentsByStudent(studentId: number): Promise<Payment[]>;
+  createPaymentAllocation(allocation: InsertPaymentAllocation): Promise<PaymentAllocation>;
 
+  // Scholarships
+  createScholarshipType(type: InsertScholarshipType): Promise<ScholarshipType>;
+  getScholarshipTypes(): Promise<ScholarshipType[]>;
+  createScholarshipApplication(app: InsertScholarshipApplication): Promise<ScholarshipApplication>;
+  getScholarshipApplications(studentId?: number): Promise<ScholarshipApplication[]>;
+  createStudentScholarship(scholarship: InsertStudentScholarship): Promise<StudentScholarship>;
+  getStudentScholarships(studentId?: number): Promise<StudentScholarship[]>;
+
+  // Expenses
+  createExpenseCategory(category: InsertExpenseCategory): Promise<ExpenseCategory>;
+  getExpenseCategories(): Promise<ExpenseCategory[]>;
+  createVendor(vendor: InsertVendor): Promise<Vendor>;
+  getVendors(): Promise<Vendor[]>;
+  createExpense(expense: InsertExpense): Promise<Expense>;
+  getExpenses(departmentId?: number): Promise<Expense[]>;
+  createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
+  createPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem>;
+  getPurchaseOrders(departmentId?: number): Promise<PurchaseOrder[]>;
+
+  // Legacy
+  updateDailyAttendance(id: number, present: boolean): Promise<Attendance>;
   // Timetable
   getTimetable(classId?: number): Promise<any[]>;
   createTimetableSlot(slot: any): Promise<any>;
@@ -136,7 +229,7 @@ export interface IStorage {
   updateAidStatus(id: number, status: string): Promise<void>;
 
   // Advanced Finance Module
-  createFinIncome(income: InsertFinIncome): Promise<FinIncome>;
+  createFinIncome(income: InsertFinIncome, userId: number): Promise<FinIncome>;
   getFinIncomes(periodId?: number, type?: string, payerId?: number): Promise<FinIncome[]>;
   createFinExpense(expense: InsertFinExpense): Promise<FinExpense>;
   getFinExpenses(periodId?: number, category?: string, userId?: number): Promise<FinExpense[]>;
@@ -153,7 +246,7 @@ export interface IStorage {
   getCourseCategories(): Promise<any[]>;
   createCourseCategory(data: InsertCourseCategory): Promise<any>;
 
-  getCourses(): Promise<Course[]>;
+  getCourses(userRole?: string): Promise<Course[]>;
   getCourse(id: number): Promise<Course | undefined>;
   createCourse(data: InsertCourse): Promise<Course>;
 
@@ -167,6 +260,7 @@ export interface IStorage {
   getLmsAssignment(id: number): Promise<LmsAssignment | undefined>;
   createLmsSubmission(data: InsertLmsSubmission): Promise<LmsSubmission>;
   getLmsSubmissions(assignmentId: number): Promise<LmsSubmission[]>;
+  isEnrolled(userId: number, courseId: number): Promise<boolean>;
 
   // HR & Admissions
   createJobPosting(data: InsertJobPosting): Promise<JobPosting>;
@@ -291,7 +385,125 @@ export interface IStorage {
   // ========================================
   createPayrollRun(run: InsertPayrollRun, details: InsertPayrollDetail[]): Promise<PayrollRun>;
   getPayrollRuns(status?: string): Promise<PayrollRun[]>;
+  getPayrollRun(id: number): Promise<(PayrollRun & { details: PayrollDetail[] }) | undefined>;
+  calculatePayroll(runId: number): Promise<void>;
+  processPayroll(runId: number): Promise<void>;
   postPayrollToGL(runId: number): Promise<void>;
+
+  // Timesheets
+  getTimesheets(employeeId?: number, startDate?: string, endDate?: string): Promise<Timesheet[]>;
+  createTimesheet(data: InsertTimesheet): Promise<Timesheet>;
+  approveTimesheet(id: number, approverId: number): Promise<void>;
+
+  // W-2/Tax Records
+  generateW2Records(taxYear: number): Promise<W2Record[]>;
+  getW2Records(taxYear: number, employeeId?: number): Promise<W2Record[]>;
+
+  // ========================================
+  // PROGRAMS MODULE
+  // ========================================
+  getPrograms(isActive?: boolean): Promise<Program[]>;
+  getProgram(id: number): Promise<Program | undefined>;
+  createProgram(data: InsertProgram): Promise<Program>;
+  updateProgram(id: number, data: Partial<InsertProgram>): Promise<Program>;
+
+  // ========================================
+  // DEPARTMENTS MODULE
+  // ========================================
+  getDepartments(isActive?: boolean): Promise<Department[]>;
+  getDepartment(id: number): Promise<Department | undefined>;
+  createDepartment(data: InsertDepartment): Promise<Department>;
+  updateDepartment(id: number, data: Partial<InsertDepartment>): Promise<Department>;
+  getDepartmentBudgetVariance(departmentId: number): Promise<{ budgeted: number; actual: number; variance: number }>;
+
+  // ========================================
+  // DONORS MODULE
+  // ========================================
+  getDonors(isActive?: boolean): Promise<Donor[]>;
+  getDonor(id: number): Promise<(Donor & { donations: Donation[] }) | undefined>;
+  createDonor(data: InsertDonor): Promise<Donor>;
+  updateDonor(id: number, data: Partial<InsertDonor>): Promise<Donor>;
+
+  // Donations
+  getDonations(donorId?: number, startDate?: string, endDate?: string): Promise<Donation[]>;
+  createDonation(data: InsertDonation): Promise<Donation>;
+  postDonationToGL(donationId: number): Promise<void>;
+
+  // ========================================
+  // ENDOWMENT & INVESTMENT MODULE
+  // ========================================
+  getEndowmentFunds(isActive?: boolean): Promise<EndowmentFund[]>;
+  getEndowmentFund(id: number): Promise<(EndowmentFund & { investments: Investment[] }) | undefined>;
+  createEndowmentFund(data: InsertEndowmentFund): Promise<EndowmentFund>;
+  updateEndowmentFund(id: number, data: Partial<InsertEndowmentFund>): Promise<EndowmentFund>;
+  calculateSpendableAmount(fundId: number): Promise<number>;
+
+  // Investments
+  getInvestments(fundId?: number): Promise<Investment[]>;
+  createInvestment(data: InsertInvestment): Promise<Investment>;
+  updateInvestmentValue(id: number, currentPrice: number): Promise<Investment>;
+
+  // Investment Transactions
+  getInvestmentTransactions(fundId?: number, investmentId?: number): Promise<InvestmentTransaction[]>;
+  createInvestmentTransaction(data: InsertInvestmentTransaction): Promise<InvestmentTransaction>;
+
+  // ========================================
+  // ASSET & DEPRECIATION MODULE
+  // ========================================
+  getDepreciationSchedules(assetId?: number): Promise<DepreciationSchedule[]>;
+  createDepreciationSchedule(data: InsertDepreciationSchedule): Promise<DepreciationSchedule>;
+  runMonthlyDepreciation(): Promise<DepreciationEntry[]>;
+  getDepreciationEntries(scheduleId?: number): Promise<DepreciationEntry[]>;
+
+  // Asset Disposals
+  getAssetDisposals(assetId?: number): Promise<AssetDisposal[]>;
+  createAssetDisposal(data: InsertAssetDisposal): Promise<AssetDisposal>;
+  postDisposalToGL(disposalId: number): Promise<void>;
+
+  // Payment Plans
+  getPaymentPlans(studentId?: number): Promise<PaymentPlan[]>;
+  getPaymentPlan(id: number): Promise<(PaymentPlan & { installments: PaymentPlanInstallment[] }) | undefined>;
+  createPaymentPlan(plan: InsertPaymentPlan): Promise<PaymentPlan>;
+  createPaymentPlanInstallment(installment: InsertPaymentPlanInstallment): Promise<PaymentPlanInstallment>;
+  updatePaymentPlanStatus(id: number, status: string): Promise<void>;
+
+  // Financial Aid
+  getFinancialAidAwards(studentId?: number): Promise<FinAidAward[]>;
+  createFinancialAidAward(award: InsertFinAidAward): Promise<FinAidAward>;
+  updateFinancialAidStatus(id: number, status: string): Promise<FinAidAward>;
+
+  // Phase 2: Academic & Fee Foundation
+  // Academic Years
+  getAcademicYears(): Promise<AcademicYear[]>;
+  createAcademicYear(year: InsertAcademicYear): Promise<AcademicYear>;
+
+  // Semesters
+  getSemesters(academicYearId?: number): Promise<Semester[]>;
+  createSemester(semester: InsertSemester): Promise<Semester>;
+
+  // Departments
+  getDepartments(): Promise<Department[]>;
+  createDepartment(dept: InsertDepartment): Promise<Department>;
+
+  // Programs
+  getPrograms(departmentId?: number): Promise<Program[]>;
+  createProgram(program: InsertProgram): Promise<Program>;
+
+  // Student Enrollments
+  getStudentEnrollments(studentId: number): Promise<StudentEnrollment[]>;
+  createStudentEnrollment(enrollment: InsertStudentEnrollment): Promise<StudentEnrollment>;
+
+  // Fee Categories
+  getFeeCategories(): Promise<FeeCategory[]>;
+  createFeeCategory(category: InsertFeeCategory): Promise<FeeCategory>;
+
+  // Fee Structures V2
+  getFeeStructuresV2(academicYearId?: number, programId?: number): Promise<FeeStructureV2[]>;
+  createFeeStructureV2(structure: InsertFeeStructureV2): Promise<FeeStructureV2>;
+
+  // Student Fees (New Ledger)
+  getStudentFees(studentId: number): Promise<StudentFee[]>;
+  createStudentFee(fee: InsertStudentFee): Promise<StudentFee>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -531,9 +743,42 @@ export class DatabaseStorage implements IStorage {
     return newFee;
   }
 
+  async bulkCreateFees(feesData: any[]): Promise<any[]> {
+    if (feesData.length === 0) return [];
+    const newFees = await db.insert(fees).values(feesData).returning();
+    return newFees;
+  }
+
   async updateFeeStatus(id: number, status: 'paid' | 'pending' | 'overdue'): Promise<any> {
     const [updated] = await db.update(fees).set({ status }).where(eq(fees.id, id)).returning();
     return updated;
+  }
+
+  async getOverdueFeesWithoutPenalty(): Promise<any[]> {
+    const today = new Date().toISOString().split('T')[0];
+
+    // Find fees that are overdue, not paid, and are NOT penalties themselves
+    // AND do not have a child fee (penalty) linked to them
+    // This second part is tricky in a single query without a join or subquery.
+    // For MVP, we can fetch overdue fees and filter in memory or use a "not exists" subquery if supported.
+    // Let's use a simpler approach: Fetch candidate overdue fees.
+
+    // 1. Get all overdue fees (excluding existing penalties)
+    const overdue = await db.select().from(fees).where(
+      and(
+        ne(fees.status, 'paid'),
+        lt(fees.dueDate, today),
+        isNull(fees.parentFeeId)
+      )
+    );
+
+    // 2. For each, check if a penalty exists
+    // This is N+1 but safe for MVP volume. 
+    // Optimization: fetch all penalties (where parentFeeId is not null) and exclude.
+    const penalties = await db.select({ parentFeeId: fees.parentFeeId }).from(fees).where(isNotNull(fees.parentFeeId));
+    const penaltyParentIds = new Set(penalties.map(p => p.parentFeeId));
+
+    return overdue.filter(f => !penaltyParentIds.has(f.id));
   }
 
   async getFeeStats(): Promise<{ totalCollected: number; totalPending: number; totalOverdue: number }> {
@@ -691,13 +936,162 @@ export class DatabaseStorage implements IStorage {
 
   // --- Advanced Finance Module Implementations ---
 
-  async createFinIncome(income: InsertFinIncome): Promise<FinIncome> {
+  async createFinIncome(income: InsertFinIncome, userId: number): Promise<FinIncome> {
     const [newIncome] = await db.insert(finIncome).values(income).returning();
-    // Auto-log audit
-    if (newIncome) {
-      await this.logFinAudit('create', 'income', newIncome.id, 0, { new: newIncome });
+    // Auto-log audit (non-blocking - don't fail the request if audit fails)
+    if (newIncome && userId) {
+      try {
+        await this.logFinAudit('create', 'income', newIncome.id, userId, { new: newIncome });
+      } catch (auditError) {
+        console.error('Audit log failed:', auditError);
+      }
     }
     return newIncome;
+  }
+
+  // Payment Plans
+  async getPaymentPlans(studentId?: number): Promise<PaymentPlan[]> {
+    const query = db.select().from(paymentPlans);
+    if (studentId) {
+      query.where(eq(paymentPlans.studentId, studentId));
+    }
+    return await query.execute();
+  }
+
+  async getPaymentPlan(id: number): Promise<(PaymentPlan & { installments: PaymentPlanInstallment[] }) | undefined> {
+    const [plan] = await db.select().from(paymentPlans).where(eq(paymentPlans.id, id));
+    if (!plan) return undefined;
+
+    const installments = await db.select().from(paymentPlanInstallments).where(eq(paymentPlanInstallments.paymentPlanId, id));
+    return { ...plan, installments };
+  }
+
+  async createPaymentPlan(plan: InsertPaymentPlan): Promise<PaymentPlan> {
+    const [newPlan] = await db.insert(paymentPlans).values(plan).returning();
+    return newPlan;
+  }
+
+  async createPaymentPlanInstallment(installment: InsertPaymentPlanInstallment): Promise<PaymentPlanInstallment> {
+    const [newInstallment] = await db.insert(paymentPlanInstallments).values(installment).returning();
+    return newInstallment;
+  }
+
+  async updatePaymentPlanStatus(id: number, status: string): Promise<void> {
+    await db.update(paymentPlans).set({ status }).where(eq(paymentPlans.id, id));
+  }
+
+  // Financial Aid
+  async getFinancialAidAwards(studentId?: number): Promise<FinAidAward[]> {
+    const query = db.select().from(financialAidAwards);
+    if (studentId) {
+      query.where(eq(financialAidAwards.studentId, studentId));
+    }
+    return await query.execute();
+  }
+
+  async createFinancialAidAward(award: InsertFinAidAward): Promise<FinAidAward> {
+    const [newAward] = await db.insert(financialAidAwards).values(award).returning();
+    return newAward;
+  }
+
+  async updateFinancialAidStatus(id: number, status: string): Promise<FinAidAward> {
+    const [updated] = await db.update(financialAidAwards)
+      .set({
+        status: status as any, // Cast to enum type if needed, or string
+        disbursedAt: status === 'disbursed' ? new Date() : undefined
+      })
+      .where(eq(financialAidAwards.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Phase 2: Academic & Fee Foundation
+
+  // Academic Years
+  async getAcademicYears(): Promise<AcademicYear[]> {
+    return await db.select().from(academicYears).orderBy(desc(academicYears.startDate));
+  }
+  async createAcademicYear(year: InsertAcademicYear): Promise<AcademicYear> {
+    const [newYear] = await db.insert(academicYears).values(year).returning();
+    return newYear;
+  }
+
+  // Semesters
+  async getSemesters(academicYearId?: number): Promise<Semester[]> {
+    const query = db.select().from(semesters);
+    if (academicYearId) {
+      query.where(eq(semesters.academicYearId, academicYearId));
+    }
+    return await query.orderBy(desc(semesters.startDate)).execute();
+  }
+  async createSemester(semester: InsertSemester): Promise<Semester> {
+    const [newSemester] = await db.insert(semesters).values(semester).returning();
+    return newSemester;
+  }
+
+  // Departments
+  async getDepartments(): Promise<Department[]> {
+    return await db.select().from(departments);
+  }
+  async createDepartment(dept: InsertDepartment): Promise<Department> {
+    const [newDept] = await db.insert(departments).values(dept).returning();
+    return newDept;
+  }
+
+  // Programs
+  async getPrograms(departmentId?: number): Promise<Program[]> {
+    const query = db.select().from(programs);
+    if (departmentId) {
+      query.where(eq(programs.departmentId, departmentId));
+    }
+    return await query.execute();
+  }
+  async createProgram(program: InsertProgram): Promise<Program> {
+    const [newProgram] = await db.insert(programs).values(program).returning();
+    return newProgram;
+  }
+
+  // Student Enrollments
+  async getStudentEnrollments(studentId: number): Promise<StudentEnrollment[]> {
+    return await db.select().from(studentEnrollments).where(eq(studentEnrollments.studentId, studentId));
+  }
+  async createStudentEnrollment(enrollment: InsertStudentEnrollment): Promise<StudentEnrollment> {
+    const [newEnrollment] = await db.insert(studentEnrollments).values(enrollment).returning();
+    return newEnrollment;
+  }
+
+  // Fee Categories
+  async getFeeCategories(): Promise<FeeCategory[]> {
+    return await db.select().from(feeCategories);
+  }
+  async createFeeCategory(category: InsertFeeCategory): Promise<FeeCategory> {
+    const [newCategory] = await db.insert(feeCategories).values(category).returning();
+    return newCategory;
+  }
+
+  // Fee Structures V2
+  async getFeeStructuresV2(academicYearId?: number, programId?: number): Promise<FeeStructureV2[]> {
+    let conditions = [];
+    if (academicYearId) conditions.push(eq(feeStructuresv2.academicYearId, academicYearId));
+    if (programId) conditions.push(eq(feeStructuresv2.programId, programId));
+
+    // If no filters, return all? Or maybe force filters? Let's return all if empty for now.
+    if (conditions.length === 0) return await db.select().from(feeStructuresv2);
+
+    return await db.select().from(feeStructuresv2).where(and(...conditions));
+  }
+  async createFeeStructureV2(structure: InsertFeeStructureV2): Promise<FeeStructureV2> {
+    const [newStructure] = await db.insert(feeStructuresv2).values(structure).returning();
+    return newStructure;
+  }
+
+  // Student Fees (New Ledger)
+  async getStudentFees(studentId: number): Promise<StudentFee[]> {
+    return await db.select().from(studentFees).where(eq(studentFees.studentId, studentId));
+  }
+  async createStudentFee(fee: InsertStudentFee): Promise<StudentFee> {
+    const [newFee] = await db.insert(studentFees).values(fee).returning();
+    return newFee;
   }
 
   async getFinIncomes(periodId?: number, type?: string, payerId?: number): Promise<FinIncome[]> {
@@ -764,6 +1158,118 @@ export class DatabaseStorage implements IStorage {
       oldValue: changes?.old,
       newValue: changes?.new
     });
+  }
+
+  // ========================================
+  // PHASE 3: PAYMENTS, SCHOLARSHIPS, EXPENSES
+  // ========================================
+
+  // Payments
+  async createPayment(payment: InsertPayment): Promise<Payment> {
+    const [newPayment] = await db.insert(payments).values(payment).returning();
+    return newPayment;
+  }
+
+  async getPayment(id: number): Promise<Payment | undefined> {
+    const [payment] = await db.select().from(payments).where(eq(payments.id, id));
+    return payment;
+  }
+
+  async getPaymentsByStudent(studentId: number): Promise<Payment[]> {
+    return await db.select().from(payments)
+      .where(eq(payments.studentId, studentId))
+      .orderBy(desc(payments.paymentDate));
+  }
+
+  async createPaymentAllocation(allocation: InsertPaymentAllocation): Promise<PaymentAllocation> {
+    const [newAllocation] = await db.insert(paymentAllocations).values(allocation).returning();
+    return newAllocation;
+  }
+
+  // Scholarships
+  async createScholarshipType(type: InsertScholarshipType): Promise<ScholarshipType> {
+    const [newType] = await db.insert(scholarshipTypes).values(type).returning();
+    return newType;
+  }
+
+  async getScholarshipTypes(): Promise<ScholarshipType[]> {
+    return await db.select().from(scholarshipTypes).where(eq(scholarshipTypes.isActive, true));
+  }
+
+  async createScholarshipApplication(app: InsertScholarshipApplication): Promise<ScholarshipApplication> {
+    const [newApp] = await db.insert(scholarshipApplications).values(app).returning();
+    return newApp;
+  }
+
+  async getScholarshipApplications(studentId?: number): Promise<ScholarshipApplication[]> {
+    const query = db.select().from(scholarshipApplications);
+    if (studentId) {
+      query.where(eq(scholarshipApplications.studentId, studentId));
+    }
+    return await query.orderBy(desc(scholarshipApplications.applicationDate));
+  }
+
+  async createStudentScholarship(scholarship: InsertStudentScholarship): Promise<StudentScholarship> {
+    const [newScholarship] = await db.insert(studentScholarships).values(scholarship).returning();
+    return newScholarship;
+  }
+
+  async getStudentScholarships(studentId?: number): Promise<StudentScholarship[]> {
+    const query = db.select().from(studentScholarships);
+    if (studentId) {
+      query.where(eq(studentScholarships.studentId, studentId));
+    }
+    return await query.orderBy(desc(studentScholarships.createdAt));
+  }
+
+  // Expenses
+  async createExpenseCategory(category: InsertExpenseCategory): Promise<ExpenseCategory> {
+    const [newCat] = await db.insert(expenseCategories).values(category).returning();
+    return newCat;
+  }
+
+  async getExpenseCategories(): Promise<ExpenseCategory[]> {
+    return await db.select().from(expenseCategories).where(eq(expenseCategories.isActive, true));
+  }
+
+  async createVendor(vendor: InsertVendor): Promise<Vendor> {
+    const [newVendor] = await db.insert(vendors).values(vendor).returning();
+    return newVendor;
+  }
+
+  async getVendors(): Promise<Vendor[]> {
+    return await db.select().from(vendors).where(eq(vendors.isActive, true));
+  }
+
+  async createExpense(expense: InsertExpense): Promise<Expense> {
+    const [newExpense] = await db.insert(expenses).values(expense).returning();
+    return newExpense;
+  }
+
+  async getExpenses(departmentId?: number): Promise<Expense[]> {
+    const query = db.select().from(expenses);
+    if (departmentId) {
+      query.where(eq(expenses.departmentId, departmentId));
+    }
+    return await query.orderBy(desc(expenses.expenseDate));
+  }
+
+  async createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder> {
+    const [newPo] = await db.insert(purchaseOrders).values(po).returning();
+    return newPo;
+  }
+
+  async createPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem> {
+    const [newItem] = await db.insert(purchaseOrderItems).values(item).returning();
+    return newItem;
+  }
+
+  async getPurchaseOrders(departmentId?: number): Promise<PurchaseOrder[]> {
+    const query = db.select().from(purchaseOrders);
+    if (departmentId) {
+      query.where(eq(purchaseOrders.departmentId, departmentId));
+    }
+    return await query.orderBy(desc(purchaseOrders.poDate));
   }
 
   /**
@@ -862,8 +1368,15 @@ export class DatabaseStorage implements IStorage {
     return cat;
   }
 
-  async getCourses(): Promise<Course[]> {
-    return await db.select().from(coursesTable);
+  async getCourses(userRole?: string): Promise<Course[]> {
+    const conditions = [];
+    if (userRole === 'student') {
+      conditions.push(eq(coursesTable.isVisible, true));
+    }
+
+    return conditions.length > 0
+      ? await db.select().from(coursesTable).where(and(...conditions))
+      : await db.select().from(coursesTable);
   }
 
   async getCourse(id: number): Promise<Course | undefined> {
@@ -909,12 +1422,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLmsSubmission(data: InsertLmsSubmission): Promise<LmsSubmission> {
+    const assignment = await this.getLmsAssignment(data.assignmentId);
+    if (!assignment) throw new Error("Assignment not found");
+
+    if (assignment.dueDate && new Date() > new Date(assignment.dueDate)) {
+      throw new Error("Submission deadline passed");
+    }
+
     const [sub] = await db.insert(lmsSubmissions).values(data).returning();
     return sub;
   }
 
   async getLmsSubmissions(assignmentId: number): Promise<LmsSubmission[]> {
     return await db.select().from(lmsSubmissions).where(eq(lmsSubmissions.assignmentId, assignmentId));
+  }
+
+  async isEnrolled(userId: number, courseId: number): Promise<boolean> {
+    // For now, allow all authenticated users access to courses
+    // In a full implementation, this would check an lms_enrollments table
+    // linking users to courses with student/instructor roles
+
+    // Check if the course exists
+    const course = await db.query.courses.findFirst({
+      where: eq(coursesTable.id, courseId)
+    });
+
+    // If course exists, allow access (can add proper enrollment check later)
+    return !!course;
   }
 
   // ========================================
@@ -1122,7 +1656,8 @@ export class DatabaseStorage implements IStorage {
       description: `Reversal: ${reason}`
     }));
 
-    // Generate journal number for reversal\n    const journalNumber = `REV-${new Date().toISOString().split('T')[0]}-${String(Date.now()).slice(-6)}`;
+    // Generate journal number for reversal
+    const journalNumber = `REV-${new Date().toISOString().split('T')[0]}-${String(Date.now()).slice(-6)}`;
 
     const reversingEntry = await this.createJournalEntry({
       journalNumber,
@@ -1356,7 +1891,7 @@ export class DatabaseStorage implements IStorage {
     const transactions: Omit<InsertGlTransaction, 'journalEntryId'>[] = [
       {
         accountId: 2, // Accounts Receivable (need to get this from COA)
-        transactionType: 'debit',
+        transactionType: 'debit' as const,
         amount: bill.totalAmount,
         description: `Student Bill ${bill.billNumber}`
       }
@@ -1450,17 +1985,18 @@ export class DatabaseStorage implements IStorage {
     }, [
       {
         accountId: 1, // Cash account
-        transactionType: 'debit',
+        transactionType: 'debit' as const,
         amount: payment.amount,
         description: `Cash received - Payment ${payment.paymentNumber}`
       },
       {
-        accountId: 2, // AR account
-        transactionType: 'credit',
+        accountId: 2, // Accounts Receivable
+        transactionType: 'credit' as const,
         amount: payment.amount,
-        description: `AR payment - ${payment.paymentNumber}`
+        description: `Payment allocation`
       }
     ]);
+
 
     await db.update(arPayments)
       .set({ glJournalEntryId: journalEntry.id })
@@ -1583,30 +2119,27 @@ export class DatabaseStorage implements IStorage {
     if (!period) throw new Error("No active fiscal period found");
 
     const entry = await this.createJournalEntry({
-      entry: {
-        journalNumber,
-        entryDate: new Date().toISOString().split('T')[0],
-        fiscalPeriodId: period.id,
-        description: `Student Refund #${refund.refundNumber} - ${refund.reason}`,
-        createdBy: refund.approvedBy!,
-        referenceType: 'ar_refund',
-        referenceId: refund.id
+      journalNumber,
+      entryDate: new Date().toISOString().split('T')[0],
+      fiscalPeriodId: period.id,
+      description: `Student Refund #${refund.refundNumber} - ${refund.reason}`,
+      createdBy: refund.approvedBy!,
+      referenceType: 'ar_refund',
+      referenceId: refund.id
+    }, [
+      {
+        accountId: 4, // Tuition Revenue (contra) or Refund Expense
+        transactionType: 'debit' as const,
+        amount: refund.amount,
+        description: `Refund #${refund.refundNumber}`
       },
-      transactions: [
-        {
-          accountId: 4, // Tuition Revenue (contra) or Refund Expense
-          transactionType: 'debit',
-          amount: refund.amount,
-          description: `Refund #${refund.refundNumber}`
-        },
-        {
-          accountId: 1, // Cash
-          transactionType: 'credit',
-          amount: refund.amount,
-          description: `Refund check #${refund.checkNumber || 'pending'}`
-        }
-      ]
-    });
+      {
+        accountId: 1, // Cash
+        transactionType: 'credit' as const,
+        amount: refund.amount,
+        description: `Refund check #${refund.checkNumber || 'pending'}`
+      }
+    ]);
 
     await db.update(arRefunds)
       .set({ glJournalEntryId: entry.id })
@@ -1736,8 +2269,7 @@ export class DatabaseStorage implements IStorage {
       dueDate: dueDate.toISOString().split('T')[0],
       totalAmount: 0,
       balanceDue: 0,
-      status: 'open',
-      generatedBy: 'system'
+      status: 'open'
     }).returning();
 
     // 4. Create line items
@@ -1753,9 +2285,10 @@ export class DatabaseStorage implements IStorage {
 
       await db.insert(arBillLineItems).values({
         billId: bill.id,
-        chargeItemId: rule.chargeItemId,
+        feeType: 'tuition', // Default to tuition, can be derived from charge item
+        unitPrice: amount,
         amount: amount,
-        description: rule.description || (chargeItem ? chargeItem.name : "Tuition Fee")
+        description: rule.description || (chargeItem ? chargeItem.description : "Tuition Fee")
       });
     }
 
@@ -1803,7 +2336,7 @@ export class DatabaseStorage implements IStorage {
     return await db.query.apExpenseReports.findMany({
       where: and(
         userId ? eq(apExpenseReports.employeeId, userId) : undefined,
-        status ? eq(apExpenseReports.status, status) : undefined
+        status ? eq(apExpenseReports.status, status as 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'paid' | 'cancelled' | 'scheduled') : undefined
       ),
       with: { items: true, employee: true },
       orderBy: desc(apExpenseReports.createdAt)
@@ -1847,16 +2380,16 @@ export class DatabaseStorage implements IStorage {
     const journalNumber = `EXP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 
     // Debit expenses, Credit AP Liability (or Cash/Reimbursement Clearing)
-    const transactions = (report.items as any[]).map((item: any) => ({
+    const transactions: Array<{ accountId: number; transactionType: 'debit' | 'credit'; amount: number; description: string }> = (report.items as any[]).map((item: any) => ({
       accountId: item.glAccountId || 5, // Default to generic expense if missing
-      transactionType: 'debit',
+      transactionType: 'debit' as const,
       amount: item.amount,
       description: `Exp: ${item.description}`
     }));
 
     transactions.push({
       accountId: 2, // AP Liability / Reimbursement Payable
-      transactionType: 'credit',
+      transactionType: 'credit' as const,
       amount: report.totalAmount,
       description: `Reimbursement for ${report.reportNumber}`
     });
@@ -2028,7 +2561,7 @@ export class DatabaseStorage implements IStorage {
     const transactions: Omit<InsertGlTransaction, 'journalEntryId'>[] = [
       {
         accountId: 3, // Accounts Payable
-        transactionType: 'credit',
+        transactionType: 'credit' as const,
         amount: invoice.totalAmount,
         description: `AP Invoice ${invoice.invoiceNumber}`
       }
@@ -2359,6 +2892,512 @@ export class DatabaseStorage implements IStorage {
       difference,
       isBalanced: difference === 0
     };
+  }
+
+  // ========================================
+  // PAYROLL MODULE IMPLEMENTATIONS
+  // ========================================
+
+  async getPayrollRun(id: number): Promise<(PayrollRun & { details: PayrollDetail[] }) | undefined> {
+    const run = await db.query.payrollRuns?.findFirst({
+      where: eq(payrollRuns.id, id)
+    });
+    if (!run) return undefined;
+
+    const details = await db.select().from(payrollDetails).where(eq(payrollDetails.payrollRunId, id));
+    return { ...run, details };
+  }
+
+  async calculatePayroll(runId: number): Promise<void> {
+    // Get payroll run
+    const run = await this.getPayrollRun(runId);
+    if (!run) throw new Error("Payroll run not found");
+
+    // Calculate totals from details
+    let totalGross = 0;
+    let totalDeductions = 0;
+    let totalNet = 0;
+
+    for (const detail of run.details) {
+      totalGross += detail.grossPay;
+      totalDeductions += (detail.federalTax || 0) + (detail.stateTax || 0) +
+        (detail.socialSecurity || 0) + (detail.medicare || 0) +
+        (detail.retirement || 0) + (detail.healthInsurance || 0) +
+        (detail.otherDeductions || 0);
+      totalNet += detail.netPay;
+    }
+
+    // Update run with calculated totals
+    await db.update(payrollRuns).set({
+      totalGross,
+      totalDeductions,
+      totalNet,
+      status: 'calculated' as const
+    }).where(eq(payrollRuns.id, runId));
+  }
+
+  async processPayroll(runId: number): Promise<void> {
+    await db.update(payrollRuns).set({
+      status: 'processed' as const,
+      processedAt: new Date()
+    }).where(eq(payrollRuns.id, runId));
+  }
+
+  // Timesheets
+  async getTimesheets(employeeId?: number, startDate?: string, endDate?: string): Promise<Timesheet[]> {
+    const conditions = [];
+    if (employeeId) conditions.push(eq(timesheets.employeeId, employeeId));
+    if (startDate) conditions.push(sql`${timesheets.workDate} >= ${startDate}`);
+    if (endDate) conditions.push(sql`${timesheets.workDate} <= ${endDate}`);
+
+    if (conditions.length > 0) {
+      return await db.select().from(timesheets).where(and(...conditions));
+    }
+    return await db.select().from(timesheets);
+  }
+
+  async createTimesheet(data: InsertTimesheet): Promise<Timesheet> {
+    const [timesheet] = await db.insert(timesheets).values(data).returning();
+    return timesheet;
+  }
+
+  async approveTimesheet(id: number, approverId: number): Promise<void> {
+    await db.update(timesheets).set({
+      approvedBy: approverId,
+      approvedAt: new Date()
+    }).where(eq(timesheets.id, id));
+  }
+
+  // W-2/Tax Records
+  async generateW2Records(taxYear: number): Promise<W2Record[]> {
+    // Get all payroll details for the tax year
+    const yearRuns = await db.select().from(payrollRuns)
+      .where(sql`EXTRACT(YEAR FROM ${payrollRuns.payDate}) = ${taxYear}`);
+
+    const runIds = yearRuns.map(r => r.id);
+    if (runIds.length === 0) return [];
+
+    const details = await db.select().from(payrollDetails)
+      .where(sql`${payrollDetails.payrollRunId} IN (${sql.join(runIds, sql`, `)})`);
+
+    // Aggregate by employee
+    const employeeTotals: Record<number, any> = {};
+    for (const d of details) {
+      if (!employeeTotals[d.employeeId]) {
+        employeeTotals[d.employeeId] = {
+          employeeId: d.employeeId,
+          totalWages: 0,
+          federalTaxWithheld: 0,
+          socialSecurityWages: 0,
+          socialSecurityTax: 0,
+          medicareWages: 0,
+          medicareTax: 0
+        };
+      }
+      const e = employeeTotals[d.employeeId];
+      e.totalWages += d.grossPay;
+      e.federalTaxWithheld += d.federalTax || 0;
+      e.socialSecurityWages += d.grossPay;
+      e.socialSecurityTax += d.socialSecurity || 0;
+      e.medicareWages += d.grossPay;
+      e.medicareTax += d.medicare || 0;
+    }
+
+    // Create W2 records
+    const w2s: W2Record[] = [];
+    for (const empId in employeeTotals) {
+      const e = employeeTotals[empId];
+      const [w2] = await db.insert(w2Records).values({
+        employeeId: e.employeeId,
+        taxYear,
+        totalWages: e.totalWages,
+        federalTaxWithheld: e.federalTaxWithheld,
+        socialSecurityWages: e.socialSecurityWages,
+        socialSecurityTax: e.socialSecurityTax,
+        medicareWages: e.medicareWages,
+        medicareTax: e.medicareTax,
+        generatedAt: new Date()
+      }).returning();
+      w2s.push(w2);
+    }
+
+    return w2s;
+  }
+
+  async getW2Records(taxYear: number, employeeId?: number): Promise<W2Record[]> {
+    const conditions = [eq(w2Records.taxYear, taxYear)];
+    if (employeeId) conditions.push(eq(w2Records.employeeId, employeeId));
+    return await db.select().from(w2Records).where(and(...conditions));
+  }
+
+  // ========================================
+  // PROGRAMS MODULE IMPLEMENTATIONS
+  // ========================================
+
+  async getPrograms(isActive?: boolean): Promise<Program[]> {
+    if (isActive !== undefined) {
+      return await db.select().from(programs).where(eq(programs.isActive, isActive));
+    }
+    return await db.select().from(programs);
+  }
+
+  async getProgram(id: number): Promise<Program | undefined> {
+    const [program] = await db.select().from(programs).where(eq(programs.id, id));
+    return program;
+  }
+
+  async createProgram(data: InsertProgram): Promise<Program> {
+    const [program] = await db.insert(programs).values(data).returning();
+    return program;
+  }
+
+  async updateProgram(id: number, data: Partial<InsertProgram>): Promise<Program> {
+    const [updated] = await db.update(programs).set(data).where(eq(programs.id, id)).returning();
+    return updated;
+  }
+
+  // ========================================
+  // DEPARTMENTS MODULE IMPLEMENTATIONS
+  // ========================================
+
+  async getDepartments(isActive?: boolean): Promise<Department[]> {
+    if (isActive !== undefined) {
+      return await db.select().from(departments).where(eq(departments.isActive, isActive));
+    }
+    return await db.select().from(departments);
+  }
+
+  async getDepartment(id: number): Promise<Department | undefined> {
+    const [department] = await db.select().from(departments).where(eq(departments.id, id));
+    return department;
+  }
+
+  async createDepartment(data: InsertDepartment): Promise<Department> {
+    const [department] = await db.insert(departments).values(data).returning();
+    return department;
+  }
+
+  async updateDepartment(id: number, data: Partial<InsertDepartment>): Promise<Department> {
+    const [updated] = await db.update(departments).set(data).where(eq(departments.id, id)).returning();
+    return updated;
+  }
+
+  async getDepartmentBudgetVariance(departmentId: number): Promise<{ budgeted: number; actual: number; variance: number }> {
+    const [dept] = await db.select().from(departments).where(eq(departments.id, departmentId));
+    if (!dept) return { budgeted: 0, actual: 0, variance: 0 };
+
+    const budgeted = dept.annualBudget || 0;
+    const actual = dept.spentAmount || 0;
+    const variance = budgeted - actual;
+
+    return { budgeted, actual, variance };
+  }
+
+  // ========================================
+  // DONORS MODULE IMPLEMENTATIONS
+  // ========================================
+
+  async getDonors(isActive?: boolean): Promise<Donor[]> {
+    if (isActive !== undefined) {
+      return await db.select().from(donors).where(eq(donors.isActive, isActive));
+    }
+    return await db.select().from(donors);
+  }
+
+  async getDonor(id: number): Promise<(Donor & { donations: Donation[] }) | undefined> {
+    const [donor] = await db.select().from(donors).where(eq(donors.id, id));
+    if (!donor) return undefined;
+
+    const donorDonations = await db.select().from(donations).where(eq(donations.donorId, id));
+    return { ...donor, donations: donorDonations };
+  }
+
+  async createDonor(data: InsertDonor): Promise<Donor> {
+    const [donor] = await db.insert(donors).values(data).returning();
+    return donor;
+  }
+
+  async updateDonor(id: number, data: Partial<InsertDonor>): Promise<Donor> {
+    const [updated] = await db.update(donors).set(data).where(eq(donors.id, id)).returning();
+    return updated;
+  }
+
+  // Donations
+  async getDonations(donorId?: number, startDate?: string, endDate?: string): Promise<Donation[]> {
+    const conditions = [];
+    if (donorId) conditions.push(eq(donations.donorId, donorId));
+    if (startDate) conditions.push(sql`${donations.donationDate} >= ${startDate}`);
+    if (endDate) conditions.push(sql`${donations.donationDate} <= ${endDate}`);
+
+    if (conditions.length > 0) {
+      return await db.select().from(donations).where(and(...conditions)).orderBy(desc(donations.donationDate));
+    }
+    return await db.select().from(donations).orderBy(desc(donations.donationDate));
+  }
+
+  async createDonation(data: InsertDonation): Promise<Donation> {
+    const [donation] = await db.insert(donations).values(data).returning();
+
+    // Update donor total donations
+    await db.update(donors).set({
+      totalDonations: sql`${donors.totalDonations} + ${data.amount}`,
+      lastDonationDate: data.donationDate
+    }).where(eq(donors.id, data.donorId));
+
+    return donation;
+  }
+
+  async postDonationToGL(donationId: number): Promise<void> {
+    const [donation] = await db.select().from(donations).where(eq(donations.id, donationId));
+    if (!donation) throw new Error("Donation not found");
+
+    // Create journal entry for donation
+    const currentPeriod = await this.getCurrentFiscalPeriod();
+    if (!currentPeriod) throw new Error("No active fiscal period");
+
+    const journalEntry = await this.createJournalEntry({
+      entryDate: donation.donationDate,
+      fiscalPeriodId: currentPeriod.id,
+      description: `Donation received: ${donation.purpose || 'General'}`,
+      status: 'draft',
+      totalDebit: donation.amount,
+      totalCredit: donation.amount,
+      createdBy: 1, // System user
+      referenceType: 'Donation',
+      referenceId: donationId
+    }, [
+      { accountId: 1, transactionType: 'debit' as const, amount: donation.amount, description: 'Cash received' },
+      { accountId: 2, transactionType: 'credit' as const, amount: donation.amount, description: 'Donation revenue' }
+    ]);
+
+    // Link journal entry to donation
+    await db.update(donations).set({ glJournalEntryId: journalEntry.id }).where(eq(donations.id, donationId));
+  }
+
+  // ========================================
+  // ENDOWMENT & INVESTMENT MODULE IMPLEMENTATIONS
+  // ========================================
+
+  async getEndowmentFunds(isActive?: boolean): Promise<EndowmentFund[]> {
+    if (isActive !== undefined) {
+      return await db.select().from(endowmentFunds).where(eq(endowmentFunds.isActive, isActive));
+    }
+    return await db.select().from(endowmentFunds);
+  }
+
+  async getEndowmentFund(id: number): Promise<(EndowmentFund & { investments: Investment[] }) | undefined> {
+    const [fund] = await db.select().from(endowmentFunds).where(eq(endowmentFunds.id, id));
+    if (!fund) return undefined;
+
+    const fundInvestments = await db.select().from(investments).where(eq(investments.endowmentFundId, id));
+    return { ...fund, investments: fundInvestments };
+  }
+
+  async createEndowmentFund(data: InsertEndowmentFund): Promise<EndowmentFund> {
+    const [fund] = await db.insert(endowmentFunds).values(data).returning();
+    return fund;
+  }
+
+  async updateEndowmentFund(id: number, data: Partial<InsertEndowmentFund>): Promise<EndowmentFund> {
+    const [updated] = await db.update(endowmentFunds).set(data).where(eq(endowmentFunds.id, id)).returning();
+    return updated;
+  }
+
+  async calculateSpendableAmount(fundId: number): Promise<number> {
+    const [fund] = await db.select().from(endowmentFunds).where(eq(endowmentFunds.id, fundId));
+    if (!fund) return 0;
+
+    // Spending rate is stored as basis points (e.g., 500 = 5.00%)
+    const spendingRate = (fund.spendingRate || 500) / 10000;
+    const spendable = Math.floor(fund.currentValue * spendingRate);
+
+    // Update the fund's spendable amount
+    await db.update(endowmentFunds).set({ spendableAmount: spendable }).where(eq(endowmentFunds.id, fundId));
+
+    return spendable;
+  }
+
+  // Investments
+  async getInvestments(fundId?: number): Promise<Investment[]> {
+    if (fundId) {
+      return await db.select().from(investments).where(eq(investments.endowmentFundId, fundId));
+    }
+    return await db.select().from(investments);
+  }
+
+  async createInvestment(data: InsertInvestment): Promise<Investment> {
+    const [investment] = await db.insert(investments).values(data).returning();
+    return investment;
+  }
+
+  async updateInvestmentValue(id: number, currentPrice: number): Promise<Investment> {
+    const [inv] = await db.select().from(investments).where(eq(investments.id, id));
+    if (!inv) throw new Error("Investment not found");
+
+    const currentValue = inv.quantity * currentPrice;
+    const [updated] = await db.update(investments).set({
+      currentPrice,
+      currentValue
+    }).where(eq(investments.id, id)).returning();
+
+    // Update endowment fund total value
+    if (inv.endowmentFundId) {
+      const fundInvestments = await db.select().from(investments).where(eq(investments.endowmentFundId, inv.endowmentFundId));
+      const totalValue = fundInvestments.reduce((sum, i) => sum + i.currentValue, 0);
+      await db.update(endowmentFunds).set({ currentValue: totalValue }).where(eq(endowmentFunds.id, inv.endowmentFundId));
+    }
+
+    return updated;
+  }
+
+  // Investment Transactions
+  async getInvestmentTransactions(fundId?: number, investmentId?: number): Promise<InvestmentTransaction[]> {
+    const conditions = [];
+    if (fundId) conditions.push(eq(investmentTransactions.endowmentFundId, fundId));
+    if (investmentId) conditions.push(eq(investmentTransactions.investmentId, investmentId));
+
+    if (conditions.length > 0) {
+      return await db.select().from(investmentTransactions).where(and(...conditions)).orderBy(desc(investmentTransactions.transactionDate));
+    }
+    return await db.select().from(investmentTransactions).orderBy(desc(investmentTransactions.transactionDate));
+  }
+
+  async createInvestmentTransaction(data: InsertInvestmentTransaction): Promise<InvestmentTransaction> {
+    const [transaction] = await db.insert(investmentTransactions).values(data).returning();
+    return transaction;
+  }
+
+  // ========================================
+  // ASSET & DEPRECIATION MODULE IMPLEMENTATIONS
+  // ========================================
+
+  async getDepreciationSchedules(assetId?: number): Promise<DepreciationSchedule[]> {
+    if (assetId) {
+      return await db.select().from(depreciationSchedules).where(eq(depreciationSchedules.assetId, assetId));
+    }
+    return await db.select().from(depreciationSchedules);
+  }
+
+  async createDepreciationSchedule(data: InsertDepreciationSchedule): Promise<DepreciationSchedule> {
+    const [schedule] = await db.insert(depreciationSchedules).values(data).returning();
+    return schedule;
+  }
+
+  async runMonthlyDepreciation(): Promise<DepreciationEntry[]> {
+    const today = new Date().toISOString().split('T')[0];
+    const entries: DepreciationEntry[] = [];
+
+    // Get all active schedules due for depreciation
+    const schedules = await db.select().from(depreciationSchedules)
+      .where(and(
+        eq(depreciationSchedules.isActive, true),
+        sql`${depreciationSchedules.nextDepreciationDate} <= ${today}`
+      ));
+
+    for (const schedule of schedules) {
+      if (schedule.periodsElapsed! >= schedule.depreciationPeriods) continue;
+
+      // Calculate depreciation amount (straight-line for simplicity)
+      const asset = await db.select().from(finAssets).where(eq(finAssets.id, schedule.assetId));
+      if (!asset[0]) continue;
+
+      const depreciableAmount = asset[0].initialCost - (asset[0].salvageValue || 0);
+      const monthlyDepreciation = Math.floor(depreciableAmount / schedule.depreciationPeriods);
+
+      // Create depreciation entry
+      const [entry] = await db.insert(depreciationEntries).values({
+        scheduleId: schedule.id,
+        entryDate: today,
+        amount: monthlyDepreciation
+      }).returning();
+      entries.push(entry);
+
+      // Update schedule
+      const newAccumulated = (schedule.accumulatedDepreciation || 0) + monthlyDepreciation;
+      const newBookValue = schedule.currentBookValue - monthlyDepreciation;
+      const newPeriodsElapsed = (schedule.periodsElapsed || 0) + 1;
+
+      // Calculate next depreciation date (1 month from now)
+      const nextDate = new Date();
+      nextDate.setMonth(nextDate.getMonth() + 1);
+
+      await db.update(depreciationSchedules).set({
+        accumulatedDepreciation: newAccumulated,
+        currentBookValue: newBookValue,
+        periodsElapsed: newPeriodsElapsed,
+        lastDepreciationDate: today,
+        nextDepreciationDate: nextDate.toISOString().split('T')[0]
+      }).where(eq(depreciationSchedules.id, schedule.id));
+
+      // Update asset current value
+      await db.update(finAssets).set({ currentValue: newBookValue }).where(eq(finAssets.id, schedule.assetId));
+    }
+
+    return entries;
+  }
+
+  async getDepreciationEntries(scheduleId?: number): Promise<DepreciationEntry[]> {
+    if (scheduleId) {
+      return await db.select().from(depreciationEntries).where(eq(depreciationEntries.scheduleId, scheduleId));
+    }
+    return await db.select().from(depreciationEntries);
+  }
+
+  // Asset Disposals
+  async getAssetDisposals(assetId?: number): Promise<AssetDisposal[]> {
+    if (assetId) {
+      return await db.select().from(assetDisposals).where(eq(assetDisposals.assetId, assetId));
+    }
+    return await db.select().from(assetDisposals);
+  }
+
+  async createAssetDisposal(data: InsertAssetDisposal): Promise<AssetDisposal> {
+    const [disposal] = await db.insert(assetDisposals).values(data).returning();
+
+    // Deactivate the depreciation schedule
+    await db.update(depreciationSchedules).set({ isActive: false }).where(eq(depreciationSchedules.assetId, data.assetId));
+
+    return disposal;
+  }
+
+  async postDisposalToGL(disposalId: number): Promise<void> {
+    const [disposal] = await db.select().from(assetDisposals).where(eq(assetDisposals.id, disposalId));
+    if (!disposal) throw new Error("Disposal not found");
+
+    const currentPeriod = await this.getCurrentFiscalPeriod();
+    if (!currentPeriod) throw new Error("No active fiscal period");
+
+    // Create journal entry for asset disposal
+    const transactions: Omit<InsertGlTransaction, 'journalEntryId'>[] = [];
+
+    if (disposal.proceedsAmount && disposal.proceedsAmount > 0) {
+      transactions.push({ accountId: 1, transactionType: 'debit' as const, amount: disposal.proceedsAmount, description: 'Cash from disposal' });
+    }
+
+    if (disposal.gainLoss > 0) {
+      transactions.push({ accountId: 2, transactionType: 'credit' as const, amount: disposal.gainLoss, description: 'Gain on disposal' });
+    } else if (disposal.gainLoss < 0) {
+      transactions.push({ accountId: 3, transactionType: 'debit' as const, amount: Math.abs(disposal.gainLoss), description: 'Loss on disposal' });
+    }
+
+    transactions.push({ accountId: 4, transactionType: 'credit' as const, amount: disposal.bookValue, description: 'Asset book value removed' });
+
+    const totalDebit = transactions.filter(t => t.transactionType === 'debit').reduce((sum, t) => sum + t.amount, 0);
+    const totalCredit = transactions.filter(t => t.transactionType === 'credit').reduce((sum, t) => sum + t.amount, 0);
+
+    const journalEntry = await this.createJournalEntry({
+      entryDate: disposal.disposalDate,
+      fiscalPeriodId: currentPeriod.id,
+      description: `Asset disposal: ${disposal.disposalMethod || 'Unknown'}`,
+      status: 'draft',
+      totalDebit,
+      totalCredit,
+      createdBy: disposal.disposedBy || 1,
+      referenceType: 'AssetDisposal',
+      referenceId: disposalId
+    }, transactions);
+
+    await db.update(assetDisposals).set({ glJournalEntryId: journalEntry.id }).where(eq(assetDisposals.id, disposalId));
   }
 }
 

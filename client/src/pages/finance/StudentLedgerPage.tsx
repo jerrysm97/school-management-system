@@ -17,7 +17,7 @@ export default function StudentLedgerPage() {
     // Print handling
     const printRef = useRef<HTMLDivElement>(null);
     const handlePrint = useReactToPrint({
-        content: () => printRef.current,
+        contentRef: printRef,
         documentTitle: `Student-Ledger-${selectedStudentId}`,
     });
 
@@ -65,7 +65,7 @@ export default function StudentLedgerPage() {
                                 <SelectContent>
                                     {students?.map((s) => (
                                         <SelectItem key={s.id} value={String(s.id)}>
-                                            {s.name} ({s.username})
+                                            {(s as any).user?.name || `Student #${s.id}`} ({(s as any).user?.username || s.admissionNo})
                                         </SelectItem>
                                     ))}
                                 </SelectContent>

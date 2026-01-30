@@ -51,7 +51,7 @@ export default function IncomePage() {
     // Print handling
     const printRef = useRef<HTMLDivElement>(null);
     const handlePrint = useReactToPrint({
-        content: () => printRef.current,
+        contentRef: printRef,
         documentTitle: `Invoice-${selectedInvoice?.id}`,
     });
 
@@ -100,7 +100,7 @@ export default function IncomePage() {
     const getPayerName = (id: number | null) => {
         if (!id) return "-";
         const student = students?.find(s => s.id === id);
-        return student ? student.name : `User #${id}`;
+        return student ? (student as any).user?.name || `Student #${id}` : `User #${id}`;
     };
 
     return (
@@ -189,7 +189,7 @@ export default function IncomePage() {
                                                         <SelectItem value="0">None</SelectItem>
                                                         {students?.map((student) => (
                                                             <SelectItem key={student.id} value={String(student.id)}>
-                                                                {student.name} ({student.username})
+                                                                {(student as any).user?.name || `Student #${student.id}`} ({(student as any).user?.username || student.admissionNo})
                                                             </SelectItem>
                                                         ))}
                                                     </SelectContent>

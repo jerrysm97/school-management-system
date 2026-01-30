@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 import { type InsertAttendance } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
 
 export function useAttendance(filters?: { date?: string; classId?: number; studentId?: number }) {
   const params = new URLSearchParams();
@@ -14,8 +15,7 @@ export function useAttendance(filters?: { date?: string; classId?: number; stude
   return useQuery({
     queryKey: [api.attendance.list.path, filters],
     queryFn: async () => {
-      const res = await fetch(queryUrl);
-      if (!res.ok) throw new Error("Failed to fetch attendance");
+      const res = await apiRequest("GET", queryUrl);
       return api.attendance.list.responses[200].parse(await res.json());
     },
     enabled: !!filters, // Only fetch if filters are present (avoid massive list)
@@ -28,12 +28,7 @@ export function useMarkAttendance() {
 
   return useMutation({
     mutationFn: async (data: InsertAttendance[]) => {
-      const res = await fetch(api.attendance.mark.path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to mark attendance");
+      const res = await apiRequest("POST", api.attendance.mark.path, data);
       return api.attendance.mark.responses[201].parse(await res.json());
     },
     onSuccess: () => {

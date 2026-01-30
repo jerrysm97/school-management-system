@@ -129,7 +129,7 @@ export default function TeachersPage() {
     return matchesSearch && matchesDept;
   });
 
-  const departments = [...new Set(teachers?.map(t => t.department).filter(Boolean))];
+  const departments = Array.from(new Set(teachers?.map(t => t.department).filter(Boolean) || []));
 
   function onSubmit(data: any) {
     const submissionData = { ...data };

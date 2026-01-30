@@ -17,13 +17,22 @@ import FeesPage from "@/pages/FeesPage";
 import ExamsPage from "@/pages/ExamsPage";
 import TimetablePage from "@/pages/TimetablePage";
 import SettingsPage from "@/pages/SettingsPage";
+import UsersPage from "@/pages/UsersPage";
 import FinanceDashboard from "@/pages/finance/FinanceDashboard";
 import IncomePage from "@/pages/finance/IncomePage";
 import ExpensesPage from "@/pages/finance/ExpensesPage";
+import PaymentsPage from "@/pages/finance/PaymentsPage";
 import AssetsPage from "@/pages/finance/AssetsPage";
 import BudgetPage from "@/pages/finance/BudgetPage";
 import StudentLedgerPage from "@/pages/finance/StudentLedgerPage";
 import GLManagement from "@/pages/finance/GLManagement";
+import DonorManagementPage from "@/pages/finance/DonorManagementPage";
+import EndowmentManagementPage from "@/pages/finance/EndowmentManagementPage";
+import PayrollTimesheetsPage from "@/pages/finance/PayrollTimesheetsPage";
+import FeeStructuresPage from "@/pages/finance/FeeStructuresPage";
+import FeeAssignmentPage from "@/pages/finance/FeeAssignmentPage";
+import PaymentPlansPage from "@/pages/finance/PaymentPlansPage";
+import ScholarshipManagementPage from "@/pages/finance/ScholarshipManagementPage";
 import RecruitmentDashboard from "@/pages/hr/RecruitmentDashboard";
 import StaffDirectory from "@/pages/hr/StaffDirectory";
 import AdmissionForm from "@/pages/public/AdmissionForm";
@@ -33,6 +42,7 @@ import CourseView from "@/pages/lms/CourseView";
 import { Loader2, AlertCircle } from "lucide-react";
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -161,6 +171,9 @@ function Router() {
       <Route path="/finance/expenses">
         <ProtectedRoute component={ExpensesPage} />
       </Route>
+      <Route path="/finance/payments">
+        <ProtectedRoute component={PaymentsPage} />
+      </Route>
       <Route path="/finance/assets">
         <ProtectedRoute component={AssetsPage} />
       </Route>
@@ -173,8 +186,30 @@ function Router() {
       <Route path="/finance/gl">
         <ProtectedRoute component={GLManagement} />
       </Route>
+      <Route path="/finance/donors">
+        <ProtectedRoute component={DonorManagementPage} />
+      </Route>
+      <Route path="/finance/endowments">
+        <ProtectedRoute component={EndowmentManagementPage} />
+      </Route>
+      <Route path="/finance/payroll">
+        <ProtectedRoute component={PayrollTimesheetsPage} />
+      </Route>
+      <Route path="/finance/fee-structures">
+        <ProtectedRoute component={FeeStructuresPage} />
+      </Route>
+      <Route path="/finance/fee-assignment">
+        <ProtectedRoute component={FeeAssignmentPage} />
+      </Route>
+      <Route path="/finance/payment-plans">
+        <ProtectedRoute component={PaymentPlansPage} />
+      </Route>
+      <Route path="/finance/scholarships">
+        <ProtectedRoute component={ScholarshipManagementPage} />
+      </Route>
 
       {/* HR Module Routes */}
+
       <Route path="/hr/recruitment">
         <ProtectedRoute component={RecruitmentDashboard} />
       </Route>

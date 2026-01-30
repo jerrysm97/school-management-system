@@ -668,6 +668,84 @@ export const glFundTypeEnum = pgEnum("gl_fund_type", [
   "capital_project"
 ]);
 
+// ========================================
+// PROGRAMS & DEPARTMENTS MODULE
+// ========================================
+
+export const programLevelEnum = pgEnum("program_level", ["diploma", "undergraduate", "graduate", "doctorate"]);
+
+// Departments - Organizational units
+export const departments = pgTable("departments", {
+  id: serial("id").primaryKey(),
+  code: text("code").unique().notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  headOfDepartmentId: integer("head_of_department_id"),
+  budgetAllocation: integer("budget_allocation").default(0),
+  contactEmail: text("contact_email"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Academic Programs
+export const programs = pgTable("programs", {
+  id: serial("id").primaryKey(),
+  departmentId: integer("department_id").references(() => departments.id),
+  code: text("code").unique().notNull(),
+  name: text("name").notNull(),
+  level: programLevelEnum("level").notNull(),
+  durationYears: integer("duration_years").notNull(),
+  totalCredits: integer("total_credits"),
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========================================
+// DONORS MODULE
+// ========================================
+
+export const donorTypeEnum = pgEnum("donor_type", ["individual", "corporation", "foundation", "government", "alumni"]);
+
+// Donors
+export const donors = pgTable("donors", {
+  id: serial("id").primaryKey(),
+  code: text("code").unique().notNull(),
+  name: text("name").notNull(),
+  donorType: donorTypeEnum("donor_type").default("individual"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  address: text("address"),
+  totalDonations: integer("total_donations").default(0),
+  lastDonationDate: date("last_donation_date"),
+  notes: text("notes"),
+  taxId: text("tax_id"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Donations
+export const donations = pgTable("donations", {
+  id: serial("id").primaryKey(),
+  donorId: integer("donor_id").notNull().references(() => donors.id),
+  amount: integer("amount").notNull(),
+  donationDate: date("donation_date").notNull(),
+  purpose: text("purpose"),
+  fundId: integer("fund_id"),
+  paymentMethod: paymentMethodEnum("payment_method"),
+  referenceNumber: text("reference_number"),
+  isRecurring: boolean("is_recurring").default(false),
+  taxReceiptIssued: boolean("tax_receipt_issued").default(false),
+  taxReceiptNumber: text("tax_receipt_number"),
+  notes: text("notes"),
+  glJournalEntryId: integer("gl_journal_entry_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ========================================
+// GENERAL LEDGER (GL) MODULE
+// ========================================
+
 // Chart of Accounts - Hierarchical account structure
 export const chartOfAccounts = pgTable("chart_of_accounts", {
   id: serial("id").primaryKey(),
@@ -1108,6 +1186,11 @@ export type InsertPurchaseOrder = typeof purchaseOrders.$inferInsert;
 export type PoLineItem = typeof poLineItems.$inferSelect;
 export type InsertPoLineItem = typeof poLineItems.$inferInsert;
 
+// Compatibility exports for storage.ts
+export { poLineItems as purchaseOrderItems };
+export type PurchaseOrderItem = PoLineItem;
+export type InsertPurchaseOrderItem = InsertPoLineItem;
+
 // ========================================
 // PAYROLL MODULE TABLES
 // ========================================
@@ -1426,6 +1509,418 @@ export type DepreciationEntry = typeof depreciationEntries.$inferSelect;
 export type InsertDepreciationEntry = z.infer<typeof insertDepreciationEntrySchema>;
 export type AssetDisposal = typeof assetDisposals.$inferSelect;
 export type InsertAssetDisposal = z.infer<typeof insertAssetDisposalSchema>;
+
+// ========================================
+// PHASE 2: ACADEMIC & FEE FOUNDATION
+// ========================================
+
+// Academic Years
+export const academicYears = pgTable("academic_years", {
+  id: serial("id").primaryKey(),
+  yearCode: text("year_code").unique().notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  isActive: boolean("is_active").default(false),
+  isClosed: boolean("is_closed").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Semesters
+export const semesters = pgTable("semesters", {
+  id: serial("id").primaryKey(),
+  academicYearId: integer("academic_year_id").references(() => academicYears.id),
+  name: text("name").notNull(),
+  semesterNumber: integer("semester_number").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  registrationStart: date("registration_start"),
+  registrationDeadline: date("registration_deadline"),
+  isActive: boolean("is_active").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Student Enrollments
+export const studentEnrollments = pgTable("student_enrollments", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => students.id),
+  semesterId: integer("semester_id").references(() => semesters.id),
+  status: text("status").default("registered"),
+  totalCredits: integer("total_credits"),
+  enrollmentDate: date("enrollment_date").defaultNow(),
+});
+
+// Fee Categories
+export const feeCategories = pgTable("fee_categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  code: text("code").unique().notNull(),
+  description: text("description"),
+  isMandatory: boolean("is_mandatory").default(true),
+  isRecurring: boolean("is_recurring").default(true),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Fee Structures V2
+export const feeStructuresv2 = pgTable("fee_structures_v2", {
+  id: serial("id").primaryKey(),
+  academicYearId: integer("academic_year_id").references(() => academicYears.id),
+  programId: integer("program_id").references(() => programs.id),
+  semesterNumber: integer("semester_number"),
+  feeCategoryId: integer("fee_category_id").references(() => feeCategories.id),
+  amount: integer("amount").notNull(),
+  calculationType: text("calculation_type").default("fixed"),
+  dueDateType: text("due_date_type").default("fixed_date"),
+  fixedDueDate: date("fixed_due_date"),
+  dueDateOffset: integer("due_date_offset").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Credit Based Fees
+export const creditBasedFees = pgTable("credit_based_fees", {
+  id: serial("id").primaryKey(),
+  programId: integer("program_id").references(() => programs.id),
+  academicYearId: integer("academic_year_id").references(() => academicYears.id),
+  feePerCredit: integer("fee_per_credit").notNull(),
+  minimumCredits: integer("minimum_credits").default(0),
+  maximumCredits: integer("maximum_credits"),
+  isActive: boolean("is_active").default(true),
+});
+
+// Program Fee Adjustments
+export const programFeeAdjustments = pgTable("program_fee_adjustments", {
+  id: serial("id").primaryKey(),
+  programId: integer("program_id").references(() => programs.id),
+  feeCategoryId: integer("fee_category_id").references(() => feeCategories.id),
+  adjustmentType: text("adjustment_type").default("fixed_amount"),
+  adjustmentValue: integer("adjustment_value"),
+  reason: text("reason"),
+  effectiveFrom: date("effective_from"),
+  effectiveTo: date("effective_to"),
+});
+
+// Student Fees
+export const studentFees = pgTable("student_fees", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => students.id),
+  semesterId: integer("semester_id").references(() => semesters.id),
+  feeStructureId: integer("fee_structure_id").references(() => feeStructuresv2.id),
+  feeCategoryId: integer("fee_category_id").references(() => feeCategories.id),
+  baseAmount: integer("base_amount").notNull(),
+  discountAmount: integer("discount_amount").default(0),
+  scholarshipAmount: integer("scholarship_amount").default(0),
+  penaltyAmount: integer("penalty_amount").default(0),
+  finalAmount: integer("final_amount").notNull(),
+  paidAmount: integer("paid_amount").default(0),
+  outstandingAmount: integer("outstanding_amount").notNull(),
+  dueDate: date("due_date").notNull(),
+  status: feeStatusEnum("status").default("pending"),
+  notes: text("notes"),
+  assignedDate: timestamp("assigned_date").defaultNow(),
+});
+
+// ==================================== 
+// PHASE 3: PAYMENTS & EXPENSES
+// ====================================
+
+// Payment & Refund Enums for Phase 3 (V2 versions with more options)
+export const paymentMethodV2Enum = pgEnum("payment_method_v2", ["cash", "card", "bank_transfer", "online", "cheque", "mobile_money"]);
+export const paymentStatusV2Enum = pgEnum("payment_status_v2", ["pending", "completed", "failed", "refunded", "cancelled"]);
+export const refundStatusV2Enum = pgEnum("refund_status_v2", ["pending", "approved", "rejected", "processed"]);
+
+// Payments
+export const payments = pgTable("payments", {
+  id: serial("id").primaryKey(),
+  paymentNumber: text("payment_number").unique().notNull(),
+  studentId: integer("student_id").references(() => students.id),
+  studentFeeId: integer("student_fee_id").references(() => studentFees.id),
+  amount: integer("amount").notNull(),
+  paymentDate: date("payment_date").defaultNow().notNull(),
+  paymentMethod: paymentMethodV2Enum("payment_method").notNull(),
+  transactionReference: text("transaction_reference"),
+  receiptNumber: text("receipt_number").unique(),
+  receiptGenerated: boolean("receipt_generated").default(false),
+  collectedById: integer("collected_by").references(() => users.id),
+  status: paymentStatusV2Enum("status").default("completed"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Payment Allocations 
+export const paymentAllocations = pgTable("payment_allocations", {
+  id: serial("id").primaryKey(),
+  paymentId: integer("payment_id").references(() => payments.id),
+  studentFeeId: integer("student_fee_id").references(() => studentFees.id),
+  allocatedAmount: integer("allocated_amount").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Refunds
+export const refunds = pgTable("refunds", {
+  id: serial("id").primaryKey(),
+  refundNumber: text("refund_number").unique().notNull(),
+  paymentId: integer("payment_id").references(() => payments.id),
+  studentId: integer("student_id").references(() => students.id),
+  refundAmount: integer("refund_amount").notNull(),
+  refundReason: text("refund_reason").notNull(),
+  refundMethod: paymentMethodV2Enum("refund_method"),
+  refundDate: date("refund_date"),
+  status: refundStatusV2Enum("status").default("pending"),
+  requestedById: integer("requested_by").references(() => users.id),
+  approvedById: integer("approved_by").references(() => users.id),
+  processedById: integer("processed_by").references(() => users.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Late Fees
+export const lateFees = pgTable("late_fees", {
+  id: serial("id").primaryKey(),
+  studentFeeId: integer("student_fee_id").references(() => studentFees.id),
+  amount: integer("amount").notNull(),
+  appliedDate: date("applied_date").defaultNow().notNull(),
+  daysOverdue: integer("days_overdue"),
+  waived: boolean("waived").default(false),
+  waivedById: integer("waived_by").references(() => users.id),
+  waiverReason: text("waiver_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Scholarship Types
+export const scholarshipTypes = pgTable("scholarship_types", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  code: text("code").unique().notNull(),
+  description: text("description"),
+  amountType: text("amount_type").notNull(),
+  amount: integer("amount"),
+  percentage: integer("percentage"),
+  totalSlots: integer("total_slots"),
+  slotsFilled: integer("slots_filled").default(0),
+  academicYearId: integer("academic_year_id").references(() => academicYears.id),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Scholarship Applications
+export const scholarshipApplications = pgTable("scholarship_applications", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => students.id),
+  scholarshipTypeId: integer("scholarship_type_id").references(() => scholarshipTypes.id),
+  academicYearId: integer("academic_year_id").references(() => academicYears.id),
+  applicationDate: date("application_date").defaultNow(),
+  status: text("status").default("pending"),
+  reviewedById: integer("reviewed_by").references(() => users.id),
+  reviewNotes: text("review_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Student Scholarships
+export const studentScholarships = pgTable("student_scholarships", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").references(() => students.id),
+  scholarshipTypeId: integer("scholarship_type_id").references(() => scholarshipTypes.id),
+  academicYearId: integer("academic_year_id").references(() => academicYears.id),
+  awardedAmount: integer("awarded_amount").notNull(),
+  disbursementType: text("disbursement_type"),
+  status: text("status").default("approved"),
+  approvedById: integer("approved_by").references(() => users.id),
+  approvalDate: date("approval_date"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Scholarship D isbursements
+export const scholarshipDisbursements = pgTable("scholarship_disbursements", {
+  id: serial("id").primaryKey(),
+  studentScholarshipId: integer("student_scholarship_id").references(() => studentScholarships.id),
+  studentFeeId: integer("student_fee_id").references(() => studentFees.id),
+  amount: integer("amount").notNull(),
+  disbursementDate: date("disbursement_date").defaultNow(),
+  disbursedById: integer("disbursed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Expense Categories
+export const expenseCategories = pgTable("expense_categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  code: text("code").unique().notNull(),
+  parentCategoryId: integer("parent_category_id"),
+  requiresApproval: boolean("requires_approval").default(true),
+  approvalLimit: integer("approval_limit"),
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Vendors
+export const vendors = pgTable("vendors", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  vendorCode: text("vendor_code").unique().notNull(),
+  contactPerson: text("contact_person"),
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  taxId: text("tax_id"),
+  bankName: text("bank_name"),
+  bankAccount: text("bank_account"),
+  isApproved: boolean("is_approved").default(false),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Expenses
+export const expenses = pgTable("expenses", {
+  id: serial("id").primaryKey(),
+  expenseNumber: text("expense_number").unique().notNull(),
+  expenseCategoryId: integer("expense_category_id").references(() => expenseCategories.id),
+  departmentId: integer("department_id").references(() => departments.id),
+  vendorId: integer("vendor_id").references(() => vendors.id),
+  amount: integer("amount").notNull(),
+  taxAmount: integer("tax_amount").default(0),
+  totalAmount: integer("total_amount").notNull(),
+  expenseDate: date("expense_date").notNull(),
+  status: text("status").default("pending"),
+  description: text("description").notNull(),
+  requestedById: integer("requested_by").references(() => users.id),
+  approvedById: integer("approved_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Note: purchaseOrders and purchaseOrderItems don't exist yet - will add export alias from AP module's poLineItems
+
+// Payment Plans
+export const paymentPlans = pgTable("payment_plans", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => students.id),
+  totalAmount: integer("total_amount").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  frequency: text("frequency").notNull(),
+  status: text("status").default("active"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Payment Plan Installments
+export const paymentPlanInstallments = pgTable("payment_plan_installments", {
+  id: serial("id").primaryKey(),
+  paymentPlanId: integer("payment_plan_id").notNull().references(() => paymentPlans.id),
+  dueDate: date("due_date").notNull(),
+  amount: integer("amount").notNull(),
+  status: text("status").default("pending"),
+  paidAmount: integer("paid_amount").default(0),
+  paidAt: timestamp("paid_at"),
+});
+
+// Schemas for Phase 2 tables
+export const insertAcademicYearSchema = createInsertSchema(academicYears).omit({ id: true, createdAt: true });
+export type AcademicYear = typeof academicYears.$inferSelect;
+export type InsertAcademicYear = z.infer<typeof insertAcademicYearSchema>;
+
+export const insertSemesterSchema = createInsertSchema(semesters).omit({ id: true, createdAt: true });
+export type Semester = typeof semesters.$inferSelect;
+export type InsertSemester = z.infer<typeof insertSemesterSchema>;
+
+export const insertStudentEnrollmentSchema = createInsertSchema(studentEnrollments).omit({ id: true, enrollmentDate: true });
+export type StudentEnrollment = typeof studentEnrollments.$inferSelect;
+export type InsertStudentEnrollment = z.infer<typeof insertStudentEnrollmentSchema>;
+
+export const insertFeeCategorySchema = createInsertSchema(feeCategories).omit({ id: true, createdAt: true });
+export type FeeCategory = typeof feeCategories.$inferSelect;
+export type InsertFeeCategory = z.infer<typeof insertFeeCategorySchema>;
+
+export const insertFeeStructureV2Schema = createInsertSchema(feeStructuresv2).omit({ id: true, createdAt: true });
+export type FeeStructureV2 = typeof feeStructuresv2.$inferSelect;
+export type InsertFeeStructureV2 = z.infer<typeof insertFeeStructureV2Schema>;
+
+export const insertCreditBasedFeeSchema = createInsertSchema(creditBasedFees).omit({ id: true });
+export type CreditBasedFee = typeof creditBasedFees.$inferSelect;
+export type InsertCreditBasedFee = z.infer<typeof insertCreditBasedFeeSchema>;
+
+export const insertProgramFeeAdjustmentSchema = createInsertSchema(programFeeAdjustments).omit({ id: true });
+export type ProgramFeeAdjustment = typeof programFeeAdjustments.$inferSelect;
+export type InsertProgramFeeAdjustment = z.infer<typeof insertProgramFeeAdjustmentSchema>;
+
+export const insertStudentFeeSchema = createInsertSchema(studentFees).omit({ id: true, assignedDate: true });
+export type StudentFee = typeof studentFees.$inferSelect;
+export type InsertStudentFee = z.infer<typeof insertStudentFeeSchema>;
+
+// Schemas for Phase 3 tables
+export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true, createdAt: true, updatedAt: true });
+export type Payment = typeof payments.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+
+export const insertPaymentAllocationSchema = createInsertSchema(paymentAllocations).omit({ id: true, createdAt: true });
+export type PaymentAllocation = typeof paymentAllocations.$inferSelect;
+export type InsertPaymentAllocation = z.infer<typeof insertPaymentAllocationSchema>;
+
+export const insertRefundSchema = createInsertSchema(refunds).omit({ id: true, createdAt: true });
+export type Refund = typeof refunds.$inferSelect;
+export type InsertRefund = z.infer<typeof insertRefundSchema>;
+
+export const insertLateFeeSchema = createInsertSchema(lateFees).omit({ id: true, createdAt: true });
+export type LateFee = typeof lateFees.$inferSelect;
+export type InsertLateFee = z.infer<typeof insertLateFeeSchema>;
+
+export const insertScholarshipTypeSchema = createInsertSchema(scholarshipTypes).omit({ id: true, createdAt: true });
+export type ScholarshipType = typeof scholarshipTypes.$inferSelect;
+export type InsertScholarshipType = z.infer<typeof insertScholarshipTypeSchema>;
+
+export const insertScholarshipApplicationSchema = createInsertSchema(scholarshipApplications).omit({ id: true, createdAt: true });
+export type ScholarshipApplication = typeof scholarshipApplications.$inferSelect;
+export type InsertScholarshipApplication = z.infer<typeof insertScholarshipApplicationSchema>;
+
+export const insertStudentScholarshipSchema = createInsertSchema(studentScholarships).omit({ id: true, createdAt: true });
+export type StudentScholarship = typeof studentScholarships.$inferSelect;
+export type InsertStudentScholarship = z.infer<typeof insertStudentScholarshipSchema>;
+
+export const insertScholarshipDisbursementSchema = createInsertSchema(scholarshipDisbursements).omit({ id: true, createdAt: true });
+export type ScholarshipDisbursement = typeof scholarshipDisbursements.$inferSelect;
+export type InsertScholarshipDisbursement = z.infer<typeof insertScholarshipDisbursementSchema>;
+
+export const insertExpenseCategorySchema = createInsertSchema(expenseCategories).omit({ id: true, createdAt: true });
+export type ExpenseCategory = typeof expenseCategories.$inferSelect;
+export type InsertExpenseCategory = z.infer<typeof insertExpenseCategorySchema>;
+
+export const insertVendorSchema = createInsertSchema(vendors).omit({ id: true, createdAt: true });
+export type Vendor = typeof vendors.$inferSelect;
+export type InsertVendor = z.infer<typeof insertVendorSchema>;
+
+export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true, createdAt: true });
+export type Expense = typeof expenses.$inferSelect;
+export type InsertExpense = z.infer<typeof insertExpenseSchema>;
+
+// Note: insertPurchaseOrderSchema and insertPurchaseOrderItemSchema already exist in AP module section
+
+export const insertPaymentPlanSchema = createInsertSchema(paymentPlans).omit({ id: true, createdAt: true });
+export type PaymentPlan = typeof paymentPlans.$inferSelect;
+export type InsertPaymentPlan = z.infer<typeof insertPaymentPlanSchema>;
+
+export const insertPaymentPlanInstallmentSchema = createInsertSchema(paymentPlanInstallments).omit({ id: true });
+export type PaymentPlanInstallment = typeof paymentPlanInstallments.$inferSelect;
+export type InsertPaymentPlanInstallment = z.infer<typeof insertPaymentPlanInstallmentSchema>;
+
+// Programs & Departments Schemas
+export const insertProgramSchema = createInsertSchema(programs).omit({ id: true, createdAt: true });
+export type Program = typeof programs.$inferSelect;
+export type InsertProgram = z.infer<typeof insertProgramSchema>;
+
+export const insertDepartmentSchema = createInsertSchema(departments).omit({ id: true, createdAt: true });
+export type Department = typeof departments.$inferSelect;
+export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
+
+// Donors Schemas  
+export const insertDonorSchema = createInsertSchema(donors).omit({ id: true, createdAt: true });
+export type Donor = typeof donors.$inferSelect;
+export type InsertDonor = z.infer<typeof insertDonorSchema>;
+
+export const insertDonationSchema = createInsertSchema(donations).omit({ id: true, createdAt: true });
+export type Donation = typeof donations.$inferSelect;
+export type InsertDonation = z.infer<typeof insertDonationSchema>;
 
 // Type Exports - Endowments
 export type EndowmentFund = typeof endowmentFunds.$inferSelect;

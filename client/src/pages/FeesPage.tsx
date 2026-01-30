@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { useFees, useFeeStats, useCreateFee, useUpdateFeeStatus } from "@/hooks/use-fees";
 import { useStudents } from "@/hooks/use-students";
 import { Button } from "@/components/ui/button";
@@ -42,7 +44,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
     Search, Plus, DollarSign, CheckCircle, AlertTriangle, Clock,
     TrendingUp, ArrowUpRight, ArrowDownRight, Receipt, CreditCard,
-    Calendar, User, FileText, Banknote
+    Calendar, User, FileText, Banknote, Loader2
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -80,6 +82,25 @@ export default function FeesPage() {
     const { data: students } = useStudents();
     const createFeeMutation = useCreateFee();
     const updateStatusMutation = useUpdateFeeStatus();
+    const queryClient = useQueryClient();
+
+    const calculatePenaltiesMutation = useMutation({
+        mutationFn: async () => {
+            const res = await apiRequest("POST", "/api/fees/calculate-penalties");
+            return res.json();
+        },
+        onSuccess: (data: any) => {
+            queryClient.invalidateQueries({ queryKey: ["/api/fees"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/fee-stats"] });
+            toast({
+                title: "Late Fee Check Complete",
+                description: `Processed ${data.processed} overdue fees. Applied ${data.applied} penalties.`
+            });
+        },
+        onError: (err: any) => {
+            toast({ title: "Error", description: err.message, variant: "destructive" });
+        }
+    });
 
     const form = useForm({
         resolver: zodResolver(createFeeSchema),
@@ -172,6 +193,16 @@ export default function FeesPage() {
                             <Plus className="mr-2 h-4 w-4" /> Create Invoice
                         </Button>
                     </DialogTrigger>
+
+                    <Button
+                        variant="outline"
+                        className="ml-2 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                        onClick={() => calculatePenaltiesMutation.mutate()}
+                        disabled={calculatePenaltiesMutation.isPending}
+                    >
+                        {calculatePenaltiesMutation.isPending ? <Clock className="mr-2 h-4 w-4 animate-spin" /> : <AlertTriangle className="mr-2 h-4 w-4" />}
+                        Scan Late Fees
+                    </Button>
                     <DialogContent className="max-w-xl">
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">

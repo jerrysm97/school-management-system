@@ -327,7 +327,7 @@ export default function ClassesPage() {
             <CardDescription>Grades</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-purple-700">{[...new Set(classes?.map(c => c.grade))].length}</p>
+            <p className="text-3xl font-bold text-purple-700">{Array.from(new Set(classes?.map(c => c.grade) || [])).length}</p>
           </CardContent>
         </Card>
         <Card className="bg-gradient-to-br from-orange-50 to-orange-100/50 border-orange-200">
@@ -388,7 +388,7 @@ export default function ClassesPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Users className="h-4 w-4 text-muted-foreground" />
-                    <span className="truncate max-w-[100px]">{cls.classTeacher?.user?.name || "No teacher"}</span>
+                    <span className="truncate max-w-[100px]">{(cls.classTeacher as any)?.user?.name || "No teacher"}</span>
                   </div>
                 </div>
               </CardContent>
@@ -417,7 +417,7 @@ export default function ClassesPage() {
                   <TableCell className="font-medium">{cls.name}</TableCell>
                   <TableCell>{cls.grade}</TableCell>
                   <TableCell>{cls.section}</TableCell>
-                  <TableCell>{cls.classTeacher?.user?.name || "-"}</TableCell>
+                  <TableCell>{(cls.classTeacher as any)?.user?.name || "-"}</TableCell>
                   <TableCell>{getStudentCount(cls.id)}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" onClick={() => setSelectedClass(cls)}>
