@@ -143,8 +143,10 @@ import {
   type InsertStaffLeaveBalance, type StaffLeaveBalance,
   type InsertLeaveRequest, type LeaveRequest,
   type InsertStaffAppraisal, type StaffAppraisal,
+  type Subject, type InsertSubject,
 } from "@shared/schema";
 import { eq, and, or, desc, sql, sum, lt, ne, isNull, isNotNull, inArray } from "drizzle-orm";
+import { encrypt, decrypt } from "./utils/encryption";
 
 export interface IStorage {
   // Users & Auth
@@ -680,7 +682,17 @@ export class DatabaseStorage implements IStorage {
     }
 
     const rows = await query.execute();
-    return rows.map(row => ({ ...row.student, user: row.user, class: row.class }));
+    return rows.map(row => {
+      // Mask sensitive data by default
+      const student = {
+        ...row.student,
+        nationalId: row.student.nationalId ? "****" : null,
+        citizenship: row.student.citizenship ? "****" : null,
+        religion: row.student.religion ? "****" : null,
+        bloodGroup: row.student.bloodGroup ? "****" : null,
+      };
+      return { ...student, user: row.user, class: row.class };
+    });
   }
 
   async updateStudentStatus(id: number, status: "approved" | "rejected"): Promise<void> {
@@ -706,7 +718,15 @@ export class DatabaseStorage implements IStorage {
       .where(eq(students.id, id));
 
     if (!row) return undefined;
-    return { ...row.student, user: row.user };
+    // Mask sensitive data by default
+    const student = {
+      ...row.student,
+      nationalId: row.student.nationalId ? "****" : null,
+      citizenship: row.student.citizenship ? "****" : null,
+      religion: row.student.religion ? "****" : null,
+      bloodGroup: row.student.bloodGroup ? "****" : null,
+    };
+    return { ...student, user: row.user };
   }
 
   async getStudentByUserId(userId: number): Promise<Student | undefined> {
@@ -2470,8 +2490,15 @@ export class DatabaseStorage implements IStorage {
 
   // AP Expense Report Implementation
   async createApVendor(vendor: InsertApVendor): Promise<ApVendor> {
-    const [newVendor] = await db.insert(apVendors).values(vendor).returning();
-    return newVendor;
+    const encryptedVendor = {
+      ...vendor,
+      bankAccountInfo: vendor.bankAccountInfo ? encrypt(vendor.bankAccountInfo) : null
+    };
+    const [newVendor] = await db.insert(apVendors).values(encryptedVendor).returning();
+    return {
+      ...newVendor,
+      bankAccountInfo: newVendor.bankAccountInfo ? decrypt(newVendor.bankAccountInfo) : null
+    };
   }
 
   async createExpenseReport(report: any, items: any[]): Promise<any> {
@@ -2621,10 +2648,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getApVendors(isActive?: boolean): Promise<ApVendor[]> {
-    if (isActive !== undefined) {
-      return await db.select().from(apVendors).where(eq(apVendors.isActive, isActive));
-    }
-    return await db.select().from(apVendors);
+    const rows = isActive !== undefined
+      ? await db.select().from(apVendors).where(eq(apVendors.isActive, isActive))
+      : await db.select().from(apVendors);
+
+    return rows.map(v => ({
+      ...v,
+      bankAccountInfo: v.bankAccountInfo ? decrypt(v.bankAccountInfo) : null
+    }));
   }
   // AP PO Matching Implementation - Uses createPurchaseOrder from line ~1348
   // This version handles items - use for AP module

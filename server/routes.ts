@@ -18,6 +18,7 @@ import jwt from "jsonwebtoken";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import rateLimit from "express-rate-limit";
+import { OAuth2Client } from "google-auth-library";
 
 const scryptAsync = promisify(scrypt);
 const JWT_SECRET = process.env.SESSION_SECRET || "super_secret_jwt_key_123";
@@ -233,7 +234,7 @@ export async function registerRoutes(
     // support login via username (ID) or email
     const user = await storage.getUserByIdentifier(username);
 
-    if (!user || !(await comparePassword(password, user.password))) {
+    if (!user || !user.password || !(await comparePassword(password, user.password))) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
@@ -241,48 +242,66 @@ export async function registerRoutes(
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '8h' }
     );
 
     res.json({ token, user });
   });
 
+  const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
   // Google Login Structure
   app.post("/api/auth/google", authRateLimiter, async (req, res) => {
-    const { googleId, email, name, avatarUrl, idToken } = req.body;
+    const { idToken } = req.body;
 
-    // TODO: Verify idToken with google-auth-library
-    // const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-    // const ticket = await client.verifyIdToken({
-    //   idToken: idToken,
-    //   audience: process.env.GOOGLE_CLIENT_ID,
-    // });
-    // const payload = ticket.getPayload();
-    // if (!payload.email.endsWith('@your-institution.edu')) return res.status(403).json({ message: "Invalid domain" });
+    if (!idToken) return res.status(400).json({ message: "ID Token required" });
 
-    // Ensure we trust the email
-    let user = await storage.getUserByGoogleId(googleId);
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
 
-    if (!user) {
-      // If no user linked to Google, check by email
-      user = await storage.getUserByIdentifier(email);
-
-      if (user) {
-        // Link existing account to Google
-        // await storage.updateUser(user.id, { googleId, avatarUrl }); 
-      } else {
-        // Strict Mode: Only allow login if account exists
-        return res.status(404).json({ message: "No institutional account found. Contact IT." });
+      const payload = ticket.getPayload();
+      if (!payload || !payload.email) {
+        return res.status(400).json({ message: "Invalid token payload" });
       }
+
+      const { sub: googleId, email, name, picture: avatarUrl } = payload;
+
+      // Optional: Restricted domain check
+      const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN;
+      if (allowedDomain && !email.endsWith(`@${allowedDomain}`)) {
+        return res.status(403).json({ message: `Access restricted to @${allowedDomain} accounts` });
+      }
+
+      // Ensure we trust the email
+      let user = await storage.getUserByGoogleId(googleId);
+
+      if (!user) {
+        // If no user linked to Google, check by email
+        user = await storage.getUserByIdentifier(email);
+
+        if (user) {
+          // Link existing account to Google
+          // await storage.updateUserGoogleInfo(user.id, googleId, avatarUrl); 
+        } else {
+          // Strict Mode: Only allow login if account exists
+          return res.status(404).json({ message: "No institutional account found. Contact IT." });
+        }
+      }
+
+      const token = jwt.sign(
+        { id: user.id, username: user.username, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '8h' }
+      );
+
+      res.json({ token, user });
+    } catch (error: any) {
+      console.error("Google Auth Error:", error);
+      res.status(401).json({ message: "Google Authentication failed", error: error.message });
     }
-
-    const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    res.json({ token, user });
   });
 
   // NEW: Change Password Route (with rate limiting)
@@ -294,7 +313,7 @@ export async function registerRoutes(
     if (!user) return res.sendStatus(404);
 
     // Verify old password
-    if (!(await comparePassword(currentPassword, user.password))) {
+    if (!user.password || !(await comparePassword(currentPassword, user.password))) {
       return res.status(400).json({ message: "Incorrect current password" });
     }
 
@@ -318,7 +337,7 @@ export async function registerRoutes(
     const adminUser = (req as any).user;
 
     // Strict Check: Must be actual main_admin, not an impersonator
-    if (adminUser.role !== 'main_admin' || adminUser.isImpersonating) {
+    if (adminUser.role !== 'main_admin' || (adminUser as any).isImpersonating) {
       return res.status(403).json({ message: "Only authenticated Main Admin can impersonate users" });
     }
 
@@ -354,7 +373,7 @@ export async function registerRoutes(
   // --- Users ---
   // Generic user creation (e.g. for Principals, Accountants who don't have separate profile tables yet)
   // Protected: Only Main Admin should create administrative staff
-  app.post(api.users.create.path, authenticateToken, requireAdmin, async (req, res) => {
+  app.post(api.users.create.path, authenticateToken, requirePermission('users', 'write'), async (req, res) => {
     try {
       const input = insertUserSchema.parse(req.body);
       const creatorRole = (req as any).user.role;
@@ -958,8 +977,8 @@ export async function registerRoutes(
     res.json({ message: "Enrollment status updated, recalculation flagged" });
   });
 
-  // Financial Transactions
-  app.get("/api/accounts/:id/transactions", authenticateToken, async (req, res) => {
+  // Financial Transactions (IDOR Protected)
+  app.get("/api/accounts/:id/transactions", authenticateToken, authorizeStudentAccess, async (req, res) => {
     const accountId = req.params.id;
     const transactions = await storage.getFinancialTransactions(accountId);
     res.json(transactions);
