@@ -160,8 +160,8 @@ export interface IStorage {
 
   // Students
   getStudents(classId?: number, status?: "pending" | "approved" | "rejected"): Promise<(Student & { user: User, class: Class | null })[]>;
-  getStudent(id: number): Promise<(Student & { user: User }) | undefined>;
-  getStudentByUserId(userId: number): Promise<Student | undefined>;
+  getStudent(id: number, includeSensitive?: boolean): Promise<(Student & { user: User }) | undefined>;
+  getStudentByUserId(userId: number): Promise<(Student & { user: User }) | undefined>;
   createStudent(student: InsertStudent): Promise<Student>;
   updateStudentStatus(id: number, status: "approved" | "rejected"): Promise<void>;
   bulkUpdateStudentStatus(ids: number[], status: "approved" | "rejected"): Promise<void>;
@@ -532,7 +532,7 @@ export interface IStorage {
   createFeeStructureV2(structure: InsertFeeStructureV2): Promise<FeeStructureV2>;
 
   // Student Fees (New Ledger)
-  getStudentFees(studentId: string): Promise<StudentFee[]>;
+  getStudentFees(studentId: number): Promise<StudentFee[]>;
   createStudentFee(fee: InsertStudentFee): Promise<StudentFee>;
 
   // ========================================
@@ -606,7 +606,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Course History
-  async getStudentCourseHistory(studentId: string): Promise<any[]> {
+  async getStudentCourseHistory(studentId: number): Promise<any[]> {
     return await db
       .select({
         history: courseHistory,
@@ -627,27 +627,28 @@ export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    return user ? sanitizeUser(user) : undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
+    return user ? sanitizeUser(user) : undefined;
   }
 
   async getUserByIdentifier(identifier: string): Promise<User | undefined> {
+    // Check if identifier is email or username
     const [user] = await db.select().from(users).where(
       or(
-        eq(users.username, identifier),
-        eq(users.email, identifier)
+        eq(users.email, identifier),
+        eq(users.username, identifier)
       )
     );
-    return user;
+    return user ? sanitizeUser(user) : undefined;
   }
 
   async getUserByGoogleId(googleId: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.googleId, googleId));
-    return user;
+    return user ? sanitizeUser(user) : undefined;
   }
 
   async createUser(user: InsertUser): Promise<User> {
@@ -686,12 +687,13 @@ export class DatabaseStorage implements IStorage {
       // Decrypt then mask sensitive data by default
       const student = {
         ...row.student,
-        nationalId: row.student.nationalId ? (decrypt(row.student.nationalId) ? "****" : null) : null,
-        citizenship: row.student.citizenship ? (decrypt(row.student.citizenship) ? "****" : null) : null,
-        religion: row.student.religion ? (decrypt(row.student.religion) ? "****" : null) : null,
-        bloodGroup: row.student.bloodGroup ? (decrypt(row.student.bloodGroup) ? "****" : null) : null,
+        // Mask sensitive PII by default when listing
+        nationalId: row.student.nationalId ? "****" : null,
+        citizenship: row.student.citizenship ? "****" : null,
+        religion: row.student.religion ? "****" : null,
+        bloodGroup: row.student.bloodGroup ? "****" : null,
       };
-      return { ...student, user: row.user, class: row.class };
+      return { ...student, user: sanitizeUser(row.user), class: row.class };
     });
   }
 
@@ -707,7 +709,7 @@ export class DatabaseStorage implements IStorage {
     await db.update(students).set({ deletedAt: new Date() }).where(inArray(students.id, ids));
   }
 
-  async getStudent(id: number): Promise<(Student & { user: User }) | undefined> {
+  async getStudent(id: number, includeSensitive: boolean = false): Promise<(Student & { user: User }) | undefined> {
     const [row] = await db
       .select({
         student: students,
@@ -718,20 +720,29 @@ export class DatabaseStorage implements IStorage {
       .where(eq(students.id, id));
 
     if (!row) return undefined;
-    // Decrypt then mask sensitive data by default
+    // Decrypt then mask sensitive data by default, unless explicitly requested
     const student = {
       ...row.student,
-      nationalId: row.student.nationalId ? (decrypt(row.student.nationalId) ? "****" : null) : null,
-      citizenship: row.student.citizenship ? (decrypt(row.student.citizenship) ? "****" : null) : null,
-      religion: row.student.religion ? (decrypt(row.student.religion) ? "****" : null) : null,
-      bloodGroup: row.student.bloodGroup ? (decrypt(row.student.bloodGroup) ? "****" : null) : null,
+      nationalId: row.student.nationalId ? (decrypt(row.student.nationalId) ? (includeSensitive ? decrypt(row.student.nationalId) : "****") : null) : null,
+      citizenship: row.student.citizenship ? (decrypt(row.student.citizenship) ? (includeSensitive ? decrypt(row.student.citizenship) : "****") : null) : null,
+      religion: row.student.religion ? (decrypt(row.student.religion) ? (includeSensitive ? decrypt(row.student.religion) : "****") : null) : null,
+      bloodGroup: row.student.bloodGroup ? (decrypt(row.student.bloodGroup) ? (includeSensitive ? decrypt(row.student.bloodGroup) : "****") : null) : null,
     };
-    return { ...student, user: row.user };
+    return { ...student, user: sanitizeUser(row.user) }; // Sanitize user object
   }
 
-  async getStudentByUserId(userId: number): Promise<Student | undefined> {
-    const [student] = await db.select().from(students).where(eq(students.userId, userId));
-    return student;
+  async getStudentByUserId(userId: number): Promise<(Student & { user: User }) | undefined> {
+    const [row] = await db
+      .select({
+        student: students,
+        user: users
+      })
+      .from(students)
+      .innerJoin(users, eq(students.userId, users.id))
+      .where(eq(students.userId, userId));
+
+    if (!row) return undefined;
+    return { ...row.student, user: sanitizeUser(row.user) }; // Sanitize user object
   }
 
   async createStudent(student: InsertStudent): Promise<Student> {
@@ -757,7 +768,7 @@ export class DatabaseStorage implements IStorage {
       .from(teachers)
       .innerJoin(users, eq(teachers.userId, users.id));
 
-    return rows.map(row => ({ ...row.teacher, user: row.user }));
+    return rows.map(row => ({ ...row.teacher, user: sanitizeUser(row.user) }));
   }
 
   async getTeacher(id: number): Promise<Teacher | undefined> {

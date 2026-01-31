@@ -33,7 +33,7 @@ if (!JWT_SECRET) {
 // Rate Limiter for all API routes
 const apiRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100, // Limit each IP/User to 100 requests per window
+  max: 2000, // Increased for Campus NAT support (unauthenticated)
   message: { error: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -42,7 +42,7 @@ const apiRateLimiter = rateLimit({
     // This prevents "Campus NAT" issues where many students share one IP.
     return (req as any).user ? `user-${(req as any).user.id}` : req.ip;
   }
-});
+} as any);
 
 // Strict Auth-related Rate Limiter
 const authRateLimiter = rateLimit({
@@ -939,6 +939,17 @@ export async function registerRoutes(
       // Auto-create account if doesn't exist
       account = await storage.createStudentAccount({ studentId, currentBalance: 0 });
     }
+
+    // Audit Log: Financial Read Access
+    await auditService.log({
+      userId: (req as any).user.id,
+      action: "view",
+      tableName: "student_accounts",
+      recordId: account.id,
+      metadata: { endpoint: "/api/students/:id/account", reason: "Accessing student financial account" },
+      req
+    });
+
     res.json(account);
   });
 
@@ -1796,9 +1807,18 @@ export async function registerRoutes(
   // ========================================
 
   app.get("/api/ar/bills", authenticateToken, requireFinanceAccess, async (req, res) => {
+    let studentId = req.query.studentId ? String(req.query.studentId) : undefined;
+    const user = (req as any).user;
+
+    // IDOR PROTECTION: Students can only see their own bills
+    if (user.role === 'student') {
+      const student = await storage.getStudentByUserId(user.id);
+      if (!student) return res.json([]);
+      studentId = String(student.id);
+    }
+
+    const status = req.query.status as string | undefined;
     try {
-      const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
-      const status = req.query.status as string | undefined;
       const bills = await storage.getStudentBills(studentId, status);
       res.json(bills);
     } catch (e: any) {
@@ -1810,6 +1830,16 @@ export async function registerRoutes(
     try {
       const bill = await storage.getStudentBill(Number((req.params.id as string)));
       if (!bill) return res.status(404).json({ message: "Bill not found" });
+
+      // IDOR PROTECTION: Check ownership
+      const user = (req as any).user;
+      if (user.role === 'student') {
+        const student = await storage.getStudentByUserId(user.id);
+        if (!student || bill.studentId !== String(student.id)) {
+          return res.status(403).json({ message: "Unauthorized access to this bill" });
+        }
+      }
+
       res.json(bill);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -2097,8 +2127,17 @@ export async function registerRoutes(
   });
 
   app.get("/api/ar/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
+    let studentId = req.query.studentId ? String(req.query.studentId) : undefined;
+    const user = (req as any).user;
+
+    // IDOR PROTECTION: Students can only see their own payments
+    if (user.role === 'student') {
+      const student = await storage.getStudentByUserId(user.id);
+      if (!student) return res.json([]);
+      studentId = String(student.id);
+    }
+
     try {
-      const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
       const payments = await storage.getArPayments(studentId);
       res.json(payments);
     } catch (e: any) {
@@ -2746,7 +2785,16 @@ export async function registerRoutes(
   });
 
   app.get("/api/finance/scholarships/applications", authenticateToken, async (req, res) => {
-    const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
+    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    const user = (req as any).user;
+
+    // IDOR PROTECTION: Students can only see their own applications
+    if (user.role === 'student') {
+      const student = await storage.getStudentByUserId(user.id);
+      if (!student) return res.json([]);
+      studentId = student.id;
+    }
+
     const apps = await storage.getScholarshipApplications(studentId);
     res.json(apps);
   });
@@ -2761,7 +2809,18 @@ export async function registerRoutes(
   });
 
   app.get("/api/finance/scholarships/student/:studentId", authenticateToken, async (req, res) => {
-    const awards = await storage.getStudentScholarships(req.params.studentId as string);
+    // IDOR PROTECTION: Verify access
+    const user = (req as any).user;
+    const targetStudentId = Number(req.params.studentId);
+
+    if (user.role === 'student') {
+      const student = await storage.getStudentByUserId(user.id);
+      if (!student || student.id !== targetStudentId) {
+        return res.status(403).json({ message: "Unauthorized access to these records" });
+      }
+    }
+
+    const awards = await storage.getStudentScholarships(targetStudentId);
     res.json(awards);
   });
 
@@ -3023,7 +3082,7 @@ export async function registerRoutes(
     try {
       const studentId = Number(req.params.id);
       const [student, health, docs, relationships, hostel, transport, library] = await Promise.all([
-        storage.getStudent(studentId),
+        storage.getStudent(studentId, false), // Default: masked
         storage.getStudentHealth(studentId),
         storage.getStudentDocuments(studentId),
         storage.getStudentRelationships(studentId),
@@ -3055,6 +3114,36 @@ export async function registerRoutes(
           libraryLoans: library
         }
       });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Reveal Sensitive Data for Editing
+  app.get("/api/students/:id/reveal-sensitive", authenticateToken, authorizeStudentAccess, async (req, res) => {
+    try {
+      const studentId = Number(req.params.id);
+
+      // Additional check: If not self, require specific write permission
+      const user = (req as any).user;
+      if (user.role !== 'student' && !await hasPermission(user.role, 'students', 'write')) {
+        return res.sendStatus(403);
+      }
+
+      const student = await storage.getStudent(studentId, true); // true = unmasked
+      if (!student) return res.status(404).json({ message: "Student not found" });
+
+      // High-Priority Audit Log
+      await auditService.log({
+        userId: user.id,
+        action: "view",
+        tableName: "students",
+        recordId: student.id,
+        metadata: { endpoint: "/api/students/:id/reveal-sensitive", reason: "Revealing sensitive PII for editing" },
+        req
+      });
+
+      res.json(student);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
