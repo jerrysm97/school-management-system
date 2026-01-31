@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, date, pgEnum, jsonb, AnyPgColumn, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, date, pgEnum, jsonb, AnyPgColumn, foreignKey, uuid } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -38,25 +38,28 @@ export const lmsModuleTypeEnum = pgEnum("lms_module_type", ["assignment", "quiz"
 export const lmsForumTypeEnum = pgEnum("lms_forum_type", ["general", "qa", "news"]);
 export const submissionStatusEnum = pgEnum("submission_status", ["submitted", "graded", "late", "draft"]);
 
-// Users Table (UPDATED with UDF)
+// Users Table (Supabase Auth Linked)
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  authId: uuid("auth_id").unique(), // Links to Supabase auth.users.id
   name: text("name").notNull(),
   username: text("username").unique().notNull(),
   email: text("email"),
-  password: text("password").notNull(),
+  password: text("password"), // Optional when using Supabase Auth
   role: roleEnum("role").notNull(),
   mustChangePassword: boolean("must_change_password").default(false),
   googleId: text("google_id").unique(),
   avatarUrl: text("avatar_url"),
   udf: jsonb("udf").default({}), // Universal Data Fields
+  metadata: jsonb("metadata").default({}), // Smart Feature: Flexible storage
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at"),
 });
 
-// Academic Periods (NEW)
+// Academic Periods
 export const academicPeriods = pgTable("academic_periods", {
-  id: serial("id").primaryKey(),
+  id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(), // e.g., "Fall 2026"
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
@@ -65,101 +68,104 @@ export const academicPeriods = pgTable("academic_periods", {
 
 // Teachers Table
 export const teachers = pgTable("teachers", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   department: text("department"),
   phone: text("phone"),
+  metadata: jsonb("metadata").default({}),
   deletedAt: timestamp("deleted_at"),
 });
 
 // Parents Table
 export const parents = pgTable("parents", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   phone: text("phone"),
   address: text("address"),
+  metadata: jsonb("metadata").default({}),
   deletedAt: timestamp("deleted_at"),
 });
 
 // Classes Table
 export const classes = pgTable("classes", {
-  id: serial("id").primaryKey(),
+  id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   grade: text("grade").notNull(),
   section: text("section").notNull(),
-  classTeacherId: integer("class_teacher_id").references(() => teachers.id),
-  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id),
+  classTeacherId: uuid("class_teacher_id").references(() => teachers.id),
+  academicPeriodId: uuid("academic_period_id").references(() => academicPeriods.id),
   deletedAt: timestamp("deleted_at"),
 });
 
-// Students Table (UPDATED - PS_PERSON fields)
+// Students Table (Supabase Ready)
 export const students = pgTable("students", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   admissionNo: text("admission_no").unique().notNull(),
-  classId: integer("class_id").references(() => classes.id),
+  classId: uuid("class_id").references(() => classes.id),
   dob: date("dob").notNull(),
   gender: genderEnum("gender"),
   phone: text("phone"),
   address: text("address"),
   deletedAt: timestamp("deleted_at"),
-  parentId: integer("parent_id").references(() => parents.id),
+  parentId: uuid("parent_id").references(() => parents.id),
   status: studentStatusEnum("status").default("pending").notNull(),
-  // New PS_PERSON Fields
+  // PS_PERSON Fields
   nationalId: text("national_id"),
   citizenship: text("citizenship"),
   ethnicity: text("ethnicity"),
   religion: text("religion"),
   bloodGroup: text("blood_group"),
+  metadata: jsonb("metadata").default({}), // Smart Feature
 });
 
 // Subjects Table
 export const subjects = pgTable("subjects", {
-  id: serial("id").primaryKey(),
+  id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   code: text("code"),
 });
 
 // Class Subjects
 export const classSubjects = pgTable("class_subjects", {
-  id: serial("id").primaryKey(),
-  classId: integer("class_id").notNull().references(() => classes.id),
-  subjectId: integer("subject_id").notNull().references(() => subjects.id),
-  teacherId: integer("teacher_id").references(() => teachers.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  classId: uuid("class_id").notNull().references(() => classes.id),
+  subjectId: uuid("subject_id").notNull().references(() => subjects.id),
+  teacherId: uuid("teacher_id").references(() => teachers.id),
 });
 
 // Attendance Table
 export const attendance = pgTable("attendance", {
-  id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   date: date("date").notNull(),
   status: attendanceStatusEnum("status").notNull(),
 });
 
 // Exams Table
 export const exams = pgTable("exams", {
-  id: serial("id").primaryKey(),
+  id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
-  classId: integer("class_id").notNull().references(() => classes.id),
-  subjectId: integer("subject_id").notNull().references(() => subjects.id),
+  classId: uuid("class_id").notNull().references(() => classes.id),
+  subjectId: uuid("subject_id").notNull().references(() => subjects.id),
   date: date("date").notNull(),
   totalMarks: integer("total_marks").notNull().default(100),
 });
 
 // Marks Table
 export const marks = pgTable("marks", {
-  id: serial("id").primaryKey(),
-  examId: integer("exam_id").notNull().references(() => exams.id),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  examId: uuid("exam_id").notNull().references(() => exams.id),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   score: integer("score").notNull(),
 });
 
-// Course History (NEW)
+// Course History
 export const courseHistory = pgTable("course_history", {
-  id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull().references(() => students.id),
-  subjectId: integer("subject_id").notNull().references(() => subjects.id),
-  academicPeriodId: integer("academic_period_id").notNull().references(() => academicPeriods.id),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  studentId: uuid("student_id").notNull().references(() => students.id),
+  subjectId: uuid("subject_id").notNull().references(() => subjects.id),
+  academicPeriodId: uuid("academic_period_id").notNull().references(() => academicPeriods.id),
   score: integer("score"),
   grade: gradeEnum("grade"),
   credits: integer("credits").default(0),
@@ -168,13 +174,13 @@ export const courseHistory = pgTable("course_history", {
 
 // Fees Table
 export const fees = pgTable("fees", {
-  id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   amount: integer("amount").notNull(),
   dueDate: date("due_date").notNull(),
   status: feeStatusEnum("status").default("pending").notNull(),
   description: text("description"),
-  parentFeeId: integer("parent_fee_id"),
+  parentFeeId: uuid("parent_fee_id"),
   deletedAt: timestamp("deleted_at"),
 }, (table) => {
   return {
@@ -187,9 +193,9 @@ export const fees = pgTable("fees", {
 
 // Timetable Table
 export const timetable = pgTable("timetable", {
-  id: serial("id").primaryKey(),
-  classId: integer("class_id").notNull().references(() => classes.id),
-  subjectId: integer("subject_id").notNull().references(() => subjects.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  classId: uuid("class_id").notNull().references(() => classes.id),
+  subjectId: uuid("subject_id").notNull().references(() => subjects.id),
   dayOfWeek: integer("day_of_week").notNull(),
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
@@ -201,33 +207,34 @@ export const timetable = pgTable("timetable", {
 
 // Student Accounts - Real-time financial standing
 export const studentAccounts = pgTable("student_accounts", {
-  id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull().references(() => students.id).unique(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  studentId: uuid("student_id").notNull().references(() => students.id).unique(),
   currentBalance: integer("current_balance").default(0).notNull(), // in cents
   accountType: accountTypeEnum("account_type").default("checking"),
   residencyStatus: residencyEnum("residency_status").default("in_state"),
   hasFinancialHold: boolean("has_financial_hold").default(false),
+  metadata: jsonb("metadata").default({}),
   dateOpened: timestamp("date_opened").defaultNow(),
 });
 
 // Fee Structures - Master rates for all charges
 export const feeStructures = pgTable("fee_structures", {
-  id: serial("id").primaryKey(),
-  subjectId: integer("subject_id").references(() => subjects.id), // null = term-level fee
+  id: uuid("id").primaryKey().defaultRandom(),
+  subjectId: uuid("subject_id").references(() => subjects.id), // null = term-level fee
   feeType: feeTypeEnum("fee_type").notNull(),
   amount: integer("amount").notNull(), // in cents
   currency: text("currency").default("USD"),
-  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id),
+  academicPeriodId: uuid("academic_period_id").references(() => academicPeriods.id),
   isPerCredit: boolean("is_per_credit").default(false), // for tuition calculation
   description: text("description"),
 });
 
 // Enrollment History - Tracks changes that trigger recalculation
 export const enrollmentHistory = pgTable("enrollment_history", {
-  id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull().references(() => students.id),
-  subjectId: integer("subject_id").notNull().references(() => subjects.id),
-  academicPeriodId: integer("academic_period_id").notNull().references(() => academicPeriods.id),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  studentId: uuid("student_id").notNull().references(() => students.id),
+  subjectId: uuid("subject_id").notNull().references(() => subjects.id),
+  academicPeriodId: uuid("academic_period_id").notNull().references(() => academicPeriods.id),
   status: enrollmentStatusEnum("status").notNull().default("enrolled"),
   credits: integer("credits").default(3),
   calculationRequired: boolean("calculation_required").default(true),
@@ -237,25 +244,26 @@ export const enrollmentHistory = pgTable("enrollment_history", {
 
 // Financial Transactions - Individual payment/bill events
 export const financialTransactions = pgTable("financial_transactions", {
-  id: serial("id").primaryKey(),
-  accountId: integer("account_id").notNull().references(() => studentAccounts.id),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  accountId: uuid("account_id").notNull().references(() => studentAccounts.id),
   amount: integer("amount").notNull(), // in cents
   transactionType: finTransactionTypeEnum("transaction_type").notNull(),
   paymentMode: paymentModeEnum("payment_mode"),
   description: text("description"),
   referenceNo: text("reference_no"), // external payment reference
+  metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow(),
   deletedAt: timestamp("deleted_at"),
 });
 
 // Financial Aid Awards - Tracks aid from external sources
 export const financialAidAwards = pgTable("financial_aid_awards", {
-  id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   aidType: aidTypeEnum("aid_type").notNull(),
   amount: integer("amount").notNull(), // in cents
   status: aidStatusEnum("status").default("pending").notNull(),
-  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id),
+  academicPeriodId: uuid("academic_period_id").references(() => academicPeriods.id),
   disbursedAt: timestamp("disbursed_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -292,20 +300,20 @@ export const teachersRelations = relations(teachers, ({ one, many }) => ({
 }));
 
 // Schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, mustChangePassword: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true, mustChangePassword: true });
 export const insertTeacherSchema = createInsertSchema(teachers).omit({ id: true });
 export const insertParentSchema = createInsertSchema(parents).omit({ id: true });
 export const insertClassSchema = createInsertSchema(classes).omit({ id: true });
 export const insertStudentSchema = createInsertSchema(students).omit({ id: true });
 export const insertSubjectSchema = createInsertSchema(subjects).omit({ id: true });
 export const insertClassSubjectSchema = createInsertSchema(classSubjects).omit({ id: true });
-export const insertAttendanceSchema = createInsertSchema(attendance).omit({ id: true });
+export const insertAttendanceSchema = createInsertSchema(attendance);  // id is generatedAlwaysAsIdentity
 export const insertExamSchema = createInsertSchema(exams).omit({ id: true });
-export const insertMarkSchema = createInsertSchema(marks).omit({ id: true });
+export const insertMarkSchema = createInsertSchema(marks);  // id is generatedAlwaysAsIdentity
 export const insertFeeSchema = createInsertSchema(fees).omit({ id: true });
 export const insertTimetableSchema = createInsertSchema(timetable).omit({ id: true });
 export const insertAcademicPeriodSchema = createInsertSchema(academicPeriods).omit({ id: true });
-export const insertCourseHistorySchema = createInsertSchema(courseHistory).omit({ id: true });
+export const insertCourseHistorySchema = createInsertSchema(courseHistory);  // id is generatedAlwaysAsIdentity
 
 // Financial Engine Schemas
 export const insertStudentAccountSchema = createInsertSchema(studentAccounts).omit({ id: true, dateOpened: true });
