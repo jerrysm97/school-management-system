@@ -95,3 +95,4 @@ export const db = getDb();
 
 // Re-export for type inference
 export type DbClient = ReturnType<typeof getDb>;
+export const pool = getSqlClient();
