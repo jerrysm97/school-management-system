@@ -2937,6 +2937,330 @@ export async function registerRoutes(
     }
   });
 
+  // ========================================
+  // HOSTEL MANAGEMENT ROUTES
+  // ========================================
+
+  // Hostels CRUD
+  app.get("/api/hostels", authenticateToken, async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const hostels = await storage.getHostels(status);
+      res.json(hostels);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/hostels", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const hostel = await storage.createHostel(req.body);
+      res.status(201).json(hostel);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Hostel Rooms
+  app.get("/api/hostels/:hostelId/rooms", authenticateToken, async (req, res) => {
+    try {
+      const hostelId = parseInt(req.params.hostelId);
+      const rooms = await storage.getHostelRooms(hostelId);
+      res.json(rooms);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/hostel-rooms", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const room = await storage.createHostelRoom(req.body);
+      res.status(201).json(room);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Hostel Allocations
+  app.get("/api/hostel-allocations", authenticateToken, async (req, res) => {
+    try {
+      const hostelId = req.query.hostelId ? parseInt(req.query.hostelId as string) : undefined;
+      const studentId = req.query.studentId ? parseInt(req.query.studentId as string) : undefined;
+      const allocations = await storage.getHostelAllocations(hostelId, studentId);
+      res.json(allocations);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/hostel-allocations", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const allocation = await storage.createHostelAllocation(req.body);
+      res.status(201).json(allocation);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================================
+  // TRANSPORT MANAGEMENT ROUTES
+  // ========================================
+
+  // Transport Routes
+  app.get("/api/transport-routes", authenticateToken, async (req, res) => {
+    try {
+      const routes = await storage.getTransportRoutes();
+      res.json(routes);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/transport-routes", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const route = await storage.createTransportRoute(req.body);
+      res.status(201).json(route);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Transport Allocations
+  app.get("/api/transport-allocations", authenticateToken, async (req, res) => {
+    try {
+      const routeId = req.query.routeId ? parseInt(req.query.routeId as string) : undefined;
+      const studentId = req.query.studentId ? parseInt(req.query.studentId as string) : undefined;
+      const allocations = await storage.getTransportAllocations(routeId, studentId);
+      res.json(allocations);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/transport-allocations", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const allocation = await storage.createTransportAllocation(req.body);
+      res.status(201).json(allocation);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================================
+  // LIBRARY MANAGEMENT ROUTES
+  // ========================================
+
+  // Library Items (Book Catalog)
+  app.get("/api/library/items", authenticateToken, async (req, res) => {
+    try {
+      const search = req.query.search as string | undefined;
+      const items = await storage.getLibraryItems(search);
+      res.json(items);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/library/items", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const item = await storage.createLibraryItem(req.body);
+      res.status(201).json(item);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Library Loans
+  app.get("/api/library/loans", authenticateToken, async (req, res) => {
+    try {
+      const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
+      const activeOnly = req.query.activeOnly === "true";
+      const loans = await storage.getLibraryLoans(userId, activeOnly);
+      res.json(loans);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/library/loans", authenticateToken, async (req, res) => {
+    try {
+      const loan = await storage.createLibraryLoan(req.body);
+      res.status(201).json(loan);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================================
+  // LEAVE MANAGEMENT ROUTES
+  // ========================================
+
+  // Leave Balances
+  app.get("/api/leave/balances/:employeeId", authenticateToken, async (req, res) => {
+    try {
+      const employeeId = parseInt(req.params.employeeId);
+      const year = req.query.year ? parseInt(req.query.year as string) : new Date().getFullYear();
+      const balance = await storage.getStaffLeaveBalance(employeeId, year);
+      res.json(balance || { message: "No balance record found" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/leave/balances", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const balance = await storage.createStaffLeaveBalance(req.body);
+      res.status(201).json(balance);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Leave Requests
+  app.get("/api/leave/requests", authenticateToken, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      let employeeId = req.query.employeeId ? parseInt(req.query.employeeId as string) : undefined;
+      const status = req.query.status as string | undefined;
+
+      // Non-admin users can only see their own requests
+      if (!['main_admin', 'admin', 'principal', 'hr'].includes(user.role)) {
+        employeeId = user.id;
+      }
+
+      const requests = await storage.getLeaveRequests(employeeId, status);
+      res.json(requests);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/leave/requests", authenticateToken, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const request = await storage.createLeaveRequest({
+        ...req.body,
+        employeeId: req.body.employeeId || userId,
+        status: 'pending'
+      });
+      res.status(201).json(request);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // ========================================
+  // PROFESSIONAL CAMPUS MODULES
+  // ========================================
+
+  // --- Student 360 Profile ---
+  app.get("/api/students/:id/full-profile", authenticateToken, authorizeStudentAccess, async (req, res) => {
+    try {
+      const studentId = Number(req.params.id);
+      const [student, health, docs, relationships, hostel, transport, library] = await Promise.all([
+        storage.getStudent(studentId),
+        storage.getStudentHealth(studentId),
+        storage.getStudentDocuments(studentId),
+        storage.getStudentRelationships(studentId),
+        storage.getHostelAllocations(undefined, studentId),
+        storage.getTransportAllocations(undefined, studentId),
+        storage.getLibraryLoans(undefined, true) // Only active loans
+      ]);
+
+      if (!student) return res.status(404).json({ message: "Student not found" });
+
+      res.json({
+        ...student,
+        health,
+        documents: docs,
+        relationships,
+        campusLife: {
+          hostel: hostel[0] || null,
+          transport: transport[0] || null,
+          libraryLoans: library
+        }
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // --- Staff Appraisals ---
+  app.get("/api/hr/appraisals/:employeeId", authenticateToken, async (req, res) => {
+    try {
+      const appraisals = await storage.getStaffAppraisals(Number(req.params.employeeId));
+      res.json(appraisals);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/hr/appraisals", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const appraisal = await storage.createStaffAppraisal(req.body);
+      res.status(201).json(appraisal);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // --- Research Grants ---
+  app.get("/api/research/grants", authenticateToken, async (req, res) => {
+    try {
+      const grants = await storage.getResearchGrants();
+      res.json(grants);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/research/grants", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const grant = await storage.createResearchGrant(req.body);
+      res.status(201).json(grant);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // --- CRM & Admissions ---
+  app.get("/api/crm/leads", authenticateToken, async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const leads = await storage.getAdmissionsLeads(status);
+      res.json(leads);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/crm/leads", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const lead = await storage.createAdmissionsLead(req.body);
+      res.status(201).json(lead);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/crm/interactions/:entityType/:entityId", authenticateToken, async (req, res) => {
+    try {
+      const interactions = await storage.getCrmInteractions(req.params.entityType, Number(req.params.entityId));
+      res.json(interactions);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/crm/interactions", authenticateToken, async (req, res) => {
+    try {
+      const interaction = await storage.createCrmInteraction(req.body);
+      res.status(201).json(interaction);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   // Gracefully attempt seeding, don't crash if DB is unreachable (e.g. invalid env vars)
   try {
     await seedDatabase();

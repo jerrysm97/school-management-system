@@ -41,6 +41,10 @@ import LmsDashboard from "@/pages/lms/LmsDashboard";
 import CourseView from "@/pages/lms/CourseView";
 import ReportsPage from "@/pages/ReportsPage";
 import AuditLogsPage from "@/pages/AuditLogsPage";
+import HostelManagementPage from "@/pages/campus/HostelManagementPage";
+import TransportManagementPage from "@/pages/campus/TransportManagementPage";
+import LibraryManagementPage from "@/pages/library/LibraryManagementPage";
+import LeaveManagementPage from "@/pages/hr/LeaveManagementPage";
 import { Loader2, AlertCircle } from "lucide-react";
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -247,6 +251,24 @@ function Router() {
       </Route>
       <Route path="/lms/course/:id">
         <ProtectedRoute component={CourseView} allowedRoles={['main_admin', 'admin', 'principal', 'teacher', 'student']} />
+      </Route>
+
+      {/* Campus Operations Routes */}
+      <Route path="/campus/hostel">
+        <ProtectedRoute component={HostelManagementPage} allowedRoles={['main_admin', 'admin', 'principal']} />
+      </Route>
+      <Route path="/campus/transport">
+        <ProtectedRoute component={TransportManagementPage} allowedRoles={['main_admin', 'admin', 'principal']} />
+      </Route>
+
+      {/* Library Routes */}
+      <Route path="/library">
+        <ProtectedRoute component={LibraryManagementPage} allowedRoles={['main_admin', 'admin', 'principal', 'teacher', 'student']} />
+      </Route>
+
+      {/* HR Leave Management */}
+      <Route path="/hr/leave">
+        <ProtectedRoute component={LeaveManagementPage} allowedRoles={['main_admin', 'admin', 'principal', 'hr', 'teacher']} />
       </Route>
 
       {/* Admin Tools Routes */}

@@ -2447,6 +2447,43 @@ export const insertStaffLeaveBalanceSchema = createInsertSchema(staffLeaveBalanc
 export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).omit({ id: true });
 export const insertStaffAppraisalSchema = createInsertSchema(staffAppraisals).omit({ id: true });
 
+// Core Identity Types
+export type StudentRelationship = typeof studentRelationships.$inferSelect;
+export type InsertStudentRelationship = z.infer<typeof insertStudentRelationshipSchema>;
+export type StudentHealth = typeof studentHealth.$inferSelect;
+export type InsertStudentHealth = z.infer<typeof insertStudentHealthSchema>;
+export type StudentDocument = typeof studentDocuments.$inferSelect;
+export type InsertStudentDocument = z.infer<typeof insertStudentDocumentSchema>;
+
+// Research Grant Types
+export type ResearchGrant = typeof researchGrants.$inferSelect;
+export type InsertResearchGrant = z.infer<typeof insertResearchGrantSchema>;
+
+// HR & Leave Management Types
+export type StaffLeaveBalance = typeof staffLeaveBalances.$inferSelect;
+export type InsertStaffLeaveBalance = z.infer<typeof insertStaffLeaveBalanceSchema>;
+export type LeaveRequest = typeof leaveRequests.$inferSelect;
+export type InsertLeaveRequest = z.infer<typeof insertLeaveRequestSchema>;
+export type StaffAppraisal = typeof staffAppraisals.$inferSelect;
+export type InsertStaffAppraisal = z.infer<typeof insertStaffAppraisalSchema>;
+
+// System Settings & RBAC Types
+export const insertSystemSettingSchema = createInsertSchema(systemSettings);
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+
+export const insertRoleSchema = createInsertSchema(roles).omit({ id: true });
+export type Role = typeof roles.$inferSelect;
+export type InsertRole = z.infer<typeof insertRoleSchema>;
+
+export const insertPermissionSchema = createInsertSchema(permissions).omit({ id: true });
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions);
+export type RolePermission = typeof rolePermissions.$inferSelect;
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+
 // Hostel Management Types
 export type Hostel = typeof hostels.$inferSelect;
 export type InsertHostel = z.infer<typeof insertHostelSchema>;

@@ -21,7 +21,9 @@ import {
   Menu,
   Check,
   Calendar,
-  History
+  History,
+  Building2,
+  Bus
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -54,6 +56,10 @@ const navItems = {
     { label: "Exams", href: "/exams", icon: CalendarCheck },
     { label: "Recruitment", href: "/hr/recruitment", icon: UserPlus },
     { label: "Admissions", href: "/admissions/dashboard", icon: UserPlus },
+    { label: "Hostel", href: "/campus/hostel", icon: Building2 },
+    { label: "Transport", href: "/campus/transport", icon: Bus },
+    { label: "Library", href: "/library", icon: BookOpen },
+    { label: "Leave Mgmt", href: "/hr/leave", icon: Calendar },
     { label: "Staff", href: "/hr/staff", icon: Users },
     { label: "Fees", href: "/fees", icon: Banknote },
     { label: "Audit Trail", href: "/audit-logs", icon: History },
