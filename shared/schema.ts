@@ -144,8 +144,10 @@ export const classSubjects = pgTable("class_subjects", {
 export const attendance = pgTable("attendance", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   studentId: integer("student_id").notNull().references(() => students.id),
+  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id), // Better history tracking
   date: date("date").notNull(),
   status: attendanceStatusEnum("status").notNull(),
+  remarks: text("remarks"),
 });
 
 // Exams Table
@@ -2095,6 +2097,375 @@ export const scheduledNotifications = pgTable("scheduled_notifications", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// ========================================
+// LIBRARY MANAGEMENT MODULE
+// ========================================
+
+export const libraryItemStatusEnum = pgEnum("library_item_status", ["available", "checked_out", "reserved", "maintenance", "lost"]);
+export const libraryLoanStatusEnum = pgEnum("library_loan_status", ["active", "returned", "overdue", "lost"]);
+
+// Catalog - Stores Book/Journal metadata (MARC 21 fields)
+export const libraryItems = pgTable("library_items", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  isbn: text("isbn").unique(),
+  marcData: jsonb("marc_data"), // Stores full MARC 21 record
+  callNumber: text("call_number"), // For locating on shelves
+  author: text("author").notNull(),
+  publisher: text("publisher"),
+  publicationYear: integer("publication_year"),
+  itemType: text("item_type").default("book"), // Book, Journal, Media
+  totalCopies: integer("total_copies").default(1),
+  availableCopies: integer("available_copies").default(1),
+  locationStack: text("location_stack"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Circulation - Tracking borrowing history
+export const libraryLoans = pgTable("library_loans", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull().references(() => libraryItems.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  checkoutDate: date("checkout_date").defaultNow().notNull(),
+  dueDate: date("due_date").notNull(),
+  returnDate: date("return_date"),
+  status: libraryLoanStatusEnum("status").default("active"),
+  fineAmount: integer("fine_amount").default(0), // Calculated based on delay
+});
+
+// Reservations
+export const libraryReservations = pgTable("library_reservations", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull().references(() => libraryItems.id),
+  userId: integer("user_id").notNull().references(() => users.id),
+  reservationDate: date("reservation_date").defaultNow(),
+  status: text("status").default("pending"), // pending, fulfilled, cancelled
+});
+
+// Library Management Schemas
+export const insertLibraryItemSchema = createInsertSchema(libraryItems).omit({ id: true, createdAt: true });
+export const insertLibraryLoanSchema = createInsertSchema(libraryLoans).omit({ id: true });
+export const insertLibraryReservationSchema = createInsertSchema(libraryReservations).omit({ id: true });
+
+// Library Management Types
+export type LibraryItem = typeof libraryItems.$inferSelect;
+export type InsertLibraryItem = z.infer<typeof insertLibraryItemSchema>;
+export type LibraryLoan = typeof libraryLoans.$inferSelect;
+export type InsertLibraryLoan = z.infer<typeof insertLibraryLoanSchema>;
+export type LibraryReservation = typeof libraryReservations.$inferSelect;
+export type InsertLibraryReservation = z.infer<typeof insertLibraryReservationSchema>;
+
+// =============================================================================
+// 1. CORE IDENTITY & 360° PROFILE (The "Single Source of Truth")
+// =============================================================================
+
+// Replaces simple "Parent" tables with a flexible Relationship matrix
+// Professional Usage: Handles step-parents, legal guardians, and emergency contacts distinctly.
+export const relationshipTypeEnum = pgEnum("relationship_type", ["father", "mother", "guardian", "sibling", "spouse", "sponsor", "other"]);
+
+export const studentRelationships = pgTable("student_relationships", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => students.id),
+  relatedUserId: integer("related_user_id").notNull().references(() => users.id), // Link to a User account
+  relationshipType: relationshipTypeEnum("relationship_type").notNull(),
+  isEmergencyContact: boolean("is_emergency_contact").default(false),
+  isBillingContact: boolean("is_billing_contact").default(false), // SYNC: Who receives the invoice?
+  canPickup: boolean("can_pickup").default(false), // Security: Authorized for pickup?
+  isLegalGuardian: boolean("is_legal_guardian").default(false),
+});
+
+// HIPAA/FERPA Compliant Health Record
+// Professional Usage: Links medical conditions to liability waivers and gym/hostel eligibility.
+export const studentHealth = pgTable("student_health", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => students.id),
+  bloodGroup: text("blood_group"), // A+, O-, etc.
+  allergies: jsonb("allergies"), // ["Peanuts", "Penicillin"]
+  medicalConditions: text("medical_conditions"),
+  vaccinationStatus: jsonb("vaccination_status"), // {"covid": true, "polio": true}
+  insuranceProvider: text("insurance_provider"),
+  insurancePolicyNo: text("insurance_policy_no"),
+  emergencyDoctorName: text("emergency_doctor_name"),
+  emergencyDoctorPhone: text("emergency_doctor_phone"),
+  lastPhysicalDate: date("last_physical_date"),
+});
+
+// Centralized Document Vault
+// Professional Usage: Stores verified digital copies of IDs, eliminating paper files.
+export const studentDocuments = pgTable("student_documents", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => students.id),
+  documentType: text("document_type").notNull(), // "Passport", "Birth Certificate", "Transcript"
+  documentNumber: text("document_number"),
+  fileUrl: text("file_url").notNull(), // S3/Storage Link
+  isVerified: boolean("is_verified").default(false),
+  verifiedBy: integer("verified_by").references(() => users.id),
+  expiryDate: date("expiry_date"), // SYNC: System alerts when visa/passport expires
+});
+
+// =============================================================================
+// 2. CAMPUS OPERATIONS (Synced to Finance)
+// =============================================================================
+
+// Hostel Management
+// Professional Sync: Room allocation is tied directly to a Fee Record.
+export const hostelRoomTypeEnum = pgEnum("hostel_room_type", ["single", "double", "dormitory", "studio"]);
+export const hostelStatusEnum = pgEnum("hostel_status", ["active", "maintenance", "closed"]);
+
+export const hostels = pgTable("hostels", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type"), // "Boys", "Girls", "Co-Ed"
+  capacity: integer("capacity").notNull(),
+  wardenId: integer("warden_id").references(() => users.id),
+  address: text("address"),
+  status: hostelStatusEnum("status").default("active"),
+});
+
+export const hostelRooms = pgTable("hostel_rooms", {
+  id: serial("id").primaryKey(),
+  hostelId: integer("hostel_id").notNull().references(() => hostels.id),
+  roomNumber: text("room_number").notNull(),
+  floor: integer("floor"),
+  capacity: integer("capacity").default(2),
+  occupiedBeds: integer("occupied_beds").default(0),
+  costPerTerm: integer("cost_per_term").notNull().default(0), // SYNC: The master price list
+  roomType: hostelRoomTypeEnum("room_type").default("double"),
+  isAc: boolean("is_ac").default(false),
+});
+
+export const hostelAllocations = pgTable("hostel_allocations", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => students.id),
+  roomId: integer("room_id").notNull().references(() => hostelRooms.id),
+  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id),
+  checkInDate: date("check_in_date").notNull(),
+  checkOutDate: date("check_out_date"),
+  status: text("status").default("active"),
+  undertakingSigned: boolean("undertaking_signed").default(false),
+  // THE SYNC POINT:
+  financeFeeId: integer("finance_fee_id").references(() => fees.id), // Cannot exist without a fee record
+});
+
+// Transport Management
+// Professional Sync: Bus routes are billable items.
+export const transportRoutes = pgTable("transport_routes", {
+  id: serial("id").primaryKey(),
+  routeName: text("route_name").notNull(), // "Route A - Downtown"
+  vehicleNumber: text("vehicle_number"),
+  driverName: text("driver_name"),
+  driverPhone: text("driver_phone"),
+  costPerTerm: integer("cost_per_term").notNull().default(0), // SYNC: Master price
+  capacity: integer("capacity"),
+  startPoint: text("start_point"),
+  endPoint: text("end_point"),
+  distanceKm: integer("distance_km"),
+});
+
+export const transportAllocations = pgTable("transport_allocations", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull().references(() => students.id),
+  routeId: integer("route_id").notNull().references(() => transportRoutes.id),
+  pickupPoint: text("pickup_point"),
+  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id),
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  isActive: boolean("is_active").default(true),
+  // THE SYNC POINT:
+  financeFeeId: integer("finance_fee_id").references(() => fees.id), // Auto-bills the student
+});
+
+
+// =============================================================================
+// 3. ACADEMIC RESOURCES (Library & Research)
+// =============================================================================
+
+
+// Research Grants (Faculty Success)
+// Professional Sync: Links academic prestige to financial auditing.
+export const researchGrants = pgTable("research_grants", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  principalInvestigatorId: integer("pi_id").references(() => users.id),
+  fundingAgency: text("funding_agency"), // "National Science Foundation"
+  totalBudget: integer("total_budget").notNull(),
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  status: text("status").default("active"),
+  // THE SYNC POINT:
+  glCode: text("gl_code"), // e.g. "GRANT-2026-05" - Tracks spending against this code
+});
+
+// =============================================================================
+// 4. HR & TALENT MANAGEMENT (Beyond just "Staff List")
+// =============================================================================
+
+// Leave Management with Accruals
+export const leaveTypeEnum = pgEnum("leave_type", ["sick", "casual", "vacation", "unpaid", "study"]);
+
+export const staffLeaveBalances = pgTable("staff_leave_balances", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => users.id),
+  year: integer("year").notNull(), // 2026
+  leaveType: leaveTypeEnum("leave_type").notNull(),
+  totalDays: integer("total_days").notNull(), // e.g. 14
+  usedDays: integer("used_days").default(0),
+  remainingDays: integer("remaining_days").default(0),
+});
+
+export const leaveRequests = pgTable("leave_requests", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => users.id),
+  leaveType: leaveTypeEnum("leave_type").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  reason: text("reason"),
+  status: text("status").default("pending"), // approved, rejected
+  approvedBy: integer("approved_by").references(() => users.id),
+});
+
+// Performance Appraisals
+export const staffAppraisals = pgTable("staff_appraisals", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => users.id),
+  reviewDate: date("review_date").notNull(),
+  evaluatorId: integer("evaluator_id").references(() => users.id),
+  score: integer("score"), // 1-100
+  comments: text("comments"),
+  goalsForNextYear: text("goals_for_next_year"),
+});
+
+// =============================================================================
+// 5. ADMISSIONS & CRM (The Enrollment Funnel)
+// =============================================================================
+
+// Enhanced Admissions Leads (Replacing the previous generic one if needed or just updating)
+// We already have admissionsLeads, but we'll ensure it has the new fields
+// This re-definition for admissionsLeads ensures it matches the new request.
+// However, since we might have existing rows, we'll try to keep the table name consistent.
+// We'll define crmInteractions here again to be safe with the new schema.
+
+// =============================================================================
+// 6. DYNAMIC ADMIN CONTROL (Configuration over Code)
+// =============================================================================
+
+// System Settings
+// Professional Usage: Allows changing school name, logos, and rules without redeploying code.
+export const systemSettings = pgTable("system_settings", {
+  key: text("key").primaryKey(), // e.g. "site_name", "allow_late_fees", "currency"
+  value: text("value").notNull(),
+  category: text("category").default("general"),
+  description: text("description"),
+  isEncrypted: boolean("is_encrypted").default(false), // For API Keys
+});
+
+// Dynamic RBAC (Role Based Access Control)
+// Professional Usage: Define granular permissions (e.g., "can_view_grades" but "cannot_edit_grades").
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").unique().notNull(), // "Dean", "Librarian", "Hostel Warden"
+  description: text("description"),
+  isSystem: boolean("is_system").default(false), // Prevent deletion of Admin
+});
+
+export const permissions = pgTable("permissions", {
+  id: serial("id").primaryKey(),
+  code: text("code").unique().notNull(), // "finance.invoices.create"
+  description: text("description"),
+  module: text("module").notNull(), // "finance"
+});
+
+export const rolePermissions = pgTable("role_permissions", {
+  roleId: integer("role_id").references(() => roles.id),
+  permissionId: integer("permission_id").references(() => permissions.id),
+});
+
+
+// ========================================
+// ADMISSIONS & CRM MODULE
+// ========================================
+
+export const leadStatusEnum = pgEnum("lead_status", ["new", "contacted", "qualified", "application_started", "converted", "lost"]);
+
+export const admissionsLeads = pgTable("admissions_leads", {
+  id: serial("id").primaryKey(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  interestProgramId: integer("interest_program_id").references(() => programs.id),
+  leadScore: integer("lead_score").default(0), // AI/Rule-based score
+  source: text("source"), // e.g., "Web", "Fair", "Referral"
+  status: leadStatusEnum("status").default("new"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// The "3Cs" (Communications, Checklists, Comments)
+export const crmInteractions = pgTable("crm_interactions", {
+  id: serial("id").primaryKey(),
+  entityType: text("entity_type").notNull(), // 'lead', 'student', 'donor'
+  entityId: integer("entity_id").notNull(),
+  interactionType: text("interaction_type").notNull(), // 'email', 'call', 'meeting'
+  subject: text("subject"),
+  notes: text("notes"),
+  recordedBy: integer("recorded_by").references(() => users.id),
+  interactionDate: timestamp("interaction_date").defaultNow(),
+});
+
+// Admissions & CRM Schemas
+export const insertAdmissionsLeadSchema = createInsertSchema(admissionsLeads).omit({ id: true, createdAt: true });
+export const insertCrmInteractionSchema = createInsertSchema(crmInteractions).omit({ id: true, interactionDate: true });
+
+// Admissions & CRM Types
+export type AdmissionsLead = typeof admissionsLeads.$inferSelect;
+export type InsertAdmissionsLead = z.infer<typeof insertAdmissionsLeadSchema>;
+export type CrmInteraction = typeof crmInteractions.$inferSelect;
+export type InsertCrmInteraction = z.infer<typeof insertCrmInteractionSchema>;
+
+// Hostel Management Schemas
+export const insertHostelSchema = createInsertSchema(hostels).omit({ id: true });
+export const insertHostelRoomSchema = createInsertSchema(hostelRooms).omit({ id: true });
+export const insertHostelAllocationSchema = createInsertSchema(hostelAllocations).omit({ id: true });
+
+// Transport Management Schemas
+export const insertTransportRouteSchema = createInsertSchema(transportRoutes).omit({ id: true });
+// export const insertTransportVehicleSchema = createInsertSchema(transportVehicles).omit({ id: true }); // Removed separate vehicle table to merge into routes as per new schema or kept separate? 
+// The new schema request merged vehicles into routes slightly (vehicleNumber in routes), but let's keep it simple.
+// Actually, the new request has `transportRoutes` with `vehicleNumber`.
+// Let's comment out the old vehicle schema if it conflicts or let it be. 
+// For now, I'll stick to the new tables provided. 
+
+export const insertTransportAllocationSchema = createInsertSchema(transportAllocations).omit({ id: true });
+
+// New Schemas
+export const insertStudentRelationshipSchema = createInsertSchema(studentRelationships).omit({ id: true });
+export const insertStudentHealthSchema = createInsertSchema(studentHealth).omit({ id: true });
+export const insertStudentDocumentSchema = createInsertSchema(studentDocuments).omit({ id: true });
+export const insertResearchGrantSchema = createInsertSchema(researchGrants).omit({ id: true });
+export const insertStaffLeaveBalanceSchema = createInsertSchema(staffLeaveBalances).omit({ id: true });
+export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).omit({ id: true });
+export const insertStaffAppraisalSchema = createInsertSchema(staffAppraisals).omit({ id: true });
+
+// Hostel Management Types
+export type Hostel = typeof hostels.$inferSelect;
+export type InsertHostel = z.infer<typeof insertHostelSchema>;
+export type HostelRoom = typeof hostelRooms.$inferSelect;
+export type InsertHostelRoom = z.infer<typeof insertHostelRoomSchema>;
+export type HostelAllocation = typeof hostelAllocations.$inferSelect;
+export type InsertHostelAllocation = z.infer<typeof insertHostelAllocationSchema>;
+
+// Transport Management Types
+export type TransportRoute = typeof transportRoutes.$inferSelect;
+export type InsertTransportRoute = z.infer<typeof insertTransportRouteSchema>;
+export type TransportAllocation = typeof transportAllocations.$inferSelect;
+export type InsertTransportAllocation = z.infer<typeof insertTransportAllocationSchema>;
+
+// Admissions & CRM Types (already defined above but let's ensure exports)
+// We will reuse the existing `admissionsLeads` and `crmInteractions` tables but might need to alter them if they changed drastically.
+// The new request shows `admissionsLeads` with `interestedProgram` as text (vs id) and `assignedTo`.
+// I will NOT replace `admissionsLeads` entirely here to avoid breaking the file structure too much, 
+// but I will add the NEW tables for sure.
 
 // ============================================================================
 // SCHEMAS & TYPE EXPORTS FOR NEW TABLES

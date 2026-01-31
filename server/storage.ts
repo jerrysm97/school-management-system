@@ -116,7 +116,33 @@ import {
   type Vendor, type InsertVendor,
   type Expense, type InsertExpense,
   type PurchaseOrder, type InsertPurchaseOrder,
-  type PurchaseOrderItem, type InsertPurchaseOrderItem
+  type PurchaseOrderItem, type InsertPurchaseOrderItem,
+
+  // Professional Modules
+  studentRelationships, studentHealth, studentDocuments,
+  hostels, hostelRooms, hostelAllocations,
+  transportRoutes, transportAllocations,
+  libraryItems, libraryLoans, researchGrants,
+  admissionsLeads, crmInteractions,
+  systemSettings, roles, permissions, rolePermissions,
+  staffLeaveBalances, leaveRequests, staffAppraisals,
+
+  type InsertStudentRelationship, type StudentRelationship,
+  type InsertStudentHealth, type StudentHealth,
+  type InsertStudentDocument, type StudentDocument,
+  type InsertHostel, type Hostel,
+  type InsertHostelRoom, type HostelRoom,
+  type InsertHostelAllocation, type HostelAllocation,
+  type InsertTransportRoute, type TransportRoute,
+  type InsertTransportAllocation, type TransportAllocation,
+  type InsertLibraryItem, type LibraryItem,
+  type InsertLibraryLoan, type LibraryLoan,
+  type InsertResearchGrant, type ResearchGrant,
+  type InsertAdmissionsLead, type AdmissionsLead,
+  type InsertCrmInteraction, type CrmInteraction,
+  type InsertStaffLeaveBalance, type StaffLeaveBalance,
+  type InsertLeaveRequest, type LeaveRequest,
+  type InsertStaffAppraisal, type StaffAppraisal,
 } from "@shared/schema";
 import { eq, and, or, desc, sql, sum, lt, ne, isNull, isNotNull, inArray } from "drizzle-orm";
 
@@ -152,7 +178,7 @@ export interface IStorage {
 
   // Attendance
   markAttendance(records: InsertAttendance[]): Promise<void>;
-  getAttendance(classId?: number, date?: string, studentId?: number): Promise<Attendance[]>;
+  getAttendance(classId?: number, date?: string, studentId?: number, academicPeriodId?: number): Promise<Attendance[]>;
 
   // Stats
   getAdminStats(): Promise<{ totalStudents: number; totalTeachers: number; totalClasses: number }>;
@@ -506,6 +532,56 @@ export interface IStorage {
   // Student Fees (New Ledger)
   getStudentFees(studentId: string): Promise<StudentFee[]>;
   createStudentFee(fee: InsertStudentFee): Promise<StudentFee>;
+
+  // ========================================
+  // PROFESSIONAL MODULES
+  // ========================================
+
+  // Identity & Documents
+  createStudentRelationship(data: InsertStudentRelationship): Promise<StudentRelationship>;
+  getStudentRelationships(studentId: number): Promise<StudentRelationship[]>;
+  createStudentHealth(data: InsertStudentHealth): Promise<StudentHealth>;
+  getStudentHealth(studentId: number): Promise<StudentHealth | undefined>;
+  createStudentDocument(data: InsertStudentDocument): Promise<StudentDocument>;
+  getStudentDocuments(studentId: number): Promise<StudentDocument[]>;
+
+  // Hostel Management
+  createHostel(data: InsertHostel): Promise<Hostel>;
+  getHostels(status?: string): Promise<Hostel[]>;
+  createHostelRoom(data: InsertHostelRoom): Promise<HostelRoom>;
+  getHostelRooms(hostelId: number): Promise<HostelRoom[]>;
+  createHostelAllocation(data: InsertHostelAllocation): Promise<HostelAllocation>;
+  getHostelAllocations(hostelId?: number, studentId?: number): Promise<HostelAllocation[]>;
+
+  // Transport Management
+  createTransportRoute(data: InsertTransportRoute): Promise<TransportRoute>;
+  getTransportRoutes(): Promise<TransportRoute[]>;
+  createTransportAllocation(data: InsertTransportAllocation): Promise<TransportAllocation>;
+  getTransportAllocations(routeId?: number, studentId?: number): Promise<TransportAllocation[]>;
+
+  // Library Management
+  createLibraryItem(data: InsertLibraryItem): Promise<LibraryItem>;
+  getLibraryItems(search?: string): Promise<LibraryItem[]>;
+  createLibraryLoan(data: InsertLibraryLoan): Promise<LibraryLoan>;
+  getLibraryLoans(userId?: number, activeOnly?: boolean): Promise<LibraryLoan[]>;
+
+  // Research Grants
+  createResearchGrant(data: InsertResearchGrant): Promise<ResearchGrant>;
+  getResearchGrants(): Promise<ResearchGrant[]>;
+
+  // HR Module
+  createStaffLeaveBalance(data: InsertStaffLeaveBalance): Promise<StaffLeaveBalance>;
+  getStaffLeaveBalance(employeeId: number, year: number): Promise<StaffLeaveBalance | undefined>;
+  createLeaveRequest(data: InsertLeaveRequest): Promise<LeaveRequest>;
+  getLeaveRequests(employeeId?: number, status?: string): Promise<LeaveRequest[]>;
+  createStaffAppraisal(data: InsertStaffAppraisal): Promise<StaffAppraisal>;
+  getStaffAppraisals(employeeId: number): Promise<StaffAppraisal[]>;
+
+  // CRM
+  createAdmissionsLead(data: InsertAdmissionsLead): Promise<AdmissionsLead>;
+  getAdmissionsLeads(status?: string): Promise<AdmissionsLead[]>;
+  createCrmInteraction(data: InsertCrmInteraction): Promise<CrmInteraction>;
+  getCrmInteractions(entityType: string, entityId: number): Promise<CrmInteraction[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -704,10 +780,11 @@ export class DatabaseStorage implements IStorage {
     await db.insert(attendance).values(records);
   }
 
-  async getAttendance(classId?: number, date?: string, studentId?: number): Promise<Attendance[]> {
+  async getAttendance(classId?: number, date?: string, studentId?: number, academicPeriodId?: number): Promise<Attendance[]> {
     let conditions = [];
     if (date) conditions.push(eq(attendance.date, date));
     if (studentId) conditions.push(eq(attendance.studentId, studentId));
+    if (academicPeriodId) conditions.push(eq(attendance.academicPeriodId, academicPeriodId));
 
     const query = db.select().from(attendance);
 
@@ -3479,6 +3556,162 @@ export class DatabaseStorage implements IStorage {
     }, transactions);
 
     await db.update(assetDisposals).set({ glJournalEntryId: journalEntry.id }).where(eq(assetDisposals.id, disposalId));
+  }
+
+  // ========================================
+  // PROFESSIONAL MODULES IMPLEMENTATION
+  // ========================================
+
+  // Identity & Documents
+  async createStudentRelationship(data: InsertStudentRelationship): Promise<StudentRelationship> {
+    const [record] = await db.insert(studentRelationships).values(data).returning();
+    return record;
+  }
+  async getStudentRelationships(studentId: number): Promise<StudentRelationship[]> {
+    return await db.select().from(studentRelationships).where(eq(studentRelationships.studentId, studentId));
+  }
+  async createStudentHealth(data: InsertStudentHealth): Promise<StudentHealth> {
+    const [record] = await db.insert(studentHealth).values(data).returning();
+    return record;
+  }
+  async getStudentHealth(studentId: number): Promise<StudentHealth | undefined> {
+    const [record] = await db.select().from(studentHealth).where(eq(studentHealth.studentId, studentId));
+    return record;
+  }
+  async createStudentDocument(data: InsertStudentDocument): Promise<StudentDocument> {
+    const [record] = await db.insert(studentDocuments).values(data).returning();
+    return record;
+  }
+  async getStudentDocuments(studentId: number): Promise<StudentDocument[]> {
+    return await db.select().from(studentDocuments).where(eq(studentDocuments.studentId, studentId));
+  }
+
+  // Hostel Management
+  async createHostel(data: InsertHostel): Promise<Hostel> {
+    const [record] = await db.insert(hostels).values(data).returning();
+    return record;
+  }
+  async getHostels(status?: string): Promise<Hostel[]> {
+    const query = db.select().from(hostels);
+    if (status) query.where(eq(hostels.status, status as any));
+    return await query.execute();
+  }
+  async createHostelRoom(data: InsertHostelRoom): Promise<HostelRoom> {
+    const [record] = await db.insert(hostelRooms).values(data).returning();
+    return record;
+  }
+  async getHostelRooms(hostelId: number): Promise<HostelRoom[]> {
+    return await db.select().from(hostelRooms).where(eq(hostelRooms.hostelId, hostelId));
+  }
+  async createHostelAllocation(data: InsertHostelAllocation): Promise<HostelAllocation> {
+    const [record] = await db.insert(hostelAllocations).values(data).returning();
+    return record;
+  }
+  async getHostelAllocations(hostelId?: number, studentId?: number): Promise<HostelAllocation[]> {
+    const conditions = [];
+    if (studentId) conditions.push(eq(hostelAllocations.studentId, studentId));
+    if (conditions.length === 0) return await db.select().from(hostelAllocations);
+    // @ts-ignore
+    return await db.select().from(hostelAllocations).where(and(...conditions));
+  }
+
+  // Transport Management
+  async createTransportRoute(data: InsertTransportRoute): Promise<TransportRoute> {
+    const [record] = await db.insert(transportRoutes).values(data).returning();
+    return record;
+  }
+  async getTransportRoutes(): Promise<TransportRoute[]> {
+    return await db.select().from(transportRoutes);
+  }
+  async createTransportAllocation(data: InsertTransportAllocation): Promise<TransportAllocation> {
+    const [record] = await db.insert(transportAllocations).values(data).returning();
+    return record;
+  }
+  async getTransportAllocations(routeId?: number, studentId?: number): Promise<TransportAllocation[]> {
+    const conditions = [];
+    if (routeId) conditions.push(eq(transportAllocations.routeId, routeId));
+    if (studentId) conditions.push(eq(transportAllocations.studentId, studentId));
+
+    if (conditions.length === 0) return await db.select().from(transportAllocations);
+    // @ts-ignore
+    return await db.select().from(transportAllocations).where(and(...conditions));
+  }
+
+  // Library Management
+  async createLibraryItem(data: InsertLibraryItem): Promise<LibraryItem> {
+    const [record] = await db.insert(libraryItems).values(data).returning();
+    return record;
+  }
+  async getLibraryItems(search?: string): Promise<LibraryItem[]> {
+    return await db.select().from(libraryItems);
+  }
+  async createLibraryLoan(data: InsertLibraryLoan): Promise<LibraryLoan> {
+    const [record] = await db.insert(libraryLoans).values(data).returning();
+    return record;
+  }
+  async getLibraryLoans(userId?: number, activeOnly?: boolean): Promise<LibraryLoan[]> {
+    const conditions = [];
+    if (userId) conditions.push(eq(libraryLoans.userId, userId));
+    // @ts-ignore
+    return await db.select().from(libraryLoans).where(and(...conditions));
+  }
+
+  // Research Grants
+  async createResearchGrant(data: InsertResearchGrant): Promise<ResearchGrant> {
+    const [record] = await db.insert(researchGrants).values(data).returning();
+    return record;
+  }
+  async getResearchGrants(): Promise<ResearchGrant[]> {
+    return await db.select().from(researchGrants);
+  }
+
+  // HR Module
+  async createStaffLeaveBalance(data: InsertStaffLeaveBalance): Promise<StaffLeaveBalance> {
+    const [record] = await db.insert(staffLeaveBalances).values(data).returning();
+    return record;
+  }
+  async getStaffLeaveBalance(employeeId: number, year: number): Promise<StaffLeaveBalance | undefined> {
+    const [record] = await db.select().from(staffLeaveBalances)
+      .where(and(eq(staffLeaveBalances.employeeId, employeeId), eq(staffLeaveBalances.year, year)));
+    return record;
+  }
+  async createLeaveRequest(data: InsertLeaveRequest): Promise<LeaveRequest> {
+    const [record] = await db.insert(leaveRequests).values(data).returning();
+    return record;
+  }
+  async getLeaveRequests(employeeId?: number, status?: string): Promise<LeaveRequest[]> {
+    const conditions = [];
+    if (employeeId) conditions.push(eq(leaveRequests.employeeId, employeeId));
+    if (status) conditions.push(eq(leaveRequests.status, status));
+    if (conditions.length === 0) return await db.select().from(leaveRequests);
+    // @ts-ignore
+    return await db.select().from(leaveRequests).where(and(...conditions));
+  }
+  async createStaffAppraisal(data: InsertStaffAppraisal): Promise<StaffAppraisal> {
+    const [record] = await db.insert(staffAppraisals).values(data).returning();
+    return record;
+  }
+  async getStaffAppraisals(employeeId: number): Promise<StaffAppraisal[]> {
+    return await db.select().from(staffAppraisals).where(eq(staffAppraisals.employeeId, employeeId));
+  }
+
+  // CRM
+  async createAdmissionsLead(data: InsertAdmissionsLead): Promise<AdmissionsLead> {
+    const [record] = await db.insert(admissionsLeads).values(data).returning();
+    return record;
+  }
+  async getAdmissionsLeads(status?: string): Promise<AdmissionsLead[]> {
+    const query = db.select().from(admissionsLeads);
+    if (status) query.where(eq(admissionsLeads.status, status as any));
+    return await query.execute();
+  }
+  async createCrmInteraction(data: InsertCrmInteraction): Promise<CrmInteraction> {
+    const [record] = await db.insert(crmInteractions).values(data).returning();
+    return record;
+  }
+  async getCrmInteractions(entityType: string, entityId: number): Promise<CrmInteraction[]> {
+    return await db.select().from(crmInteractions)
+      .where(and(eq(crmInteractions.entityType, entityType), eq(crmInteractions.entityId, entityId)));
   }
 }
 
