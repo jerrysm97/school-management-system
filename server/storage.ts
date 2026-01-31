@@ -2248,19 +2248,14 @@ export class DatabaseStorage implements IStorage {
     if (status) conditions.push(eq(arRefunds.status, status as any));
     if (studentId) conditions.push(eq(arRefunds.studentId, studentId));
 
-    const query = db.query.arRefunds.findMany({
-      where: conditions.length > 0 ? and(...conditions) : undefined,
-      with: {
-        student: {
-          with: {
-            user: true
-          }
-        }
-      },
-      orderBy: [desc(arRefunds.requestDate)]
-    });
-
-    return await query;
+    const results = await query;
+    return results.map(r => ({
+      ...r,
+      student: r.student ? {
+        ...r.student,
+        user: r.student.user ? sanitizeUser(r.student.user) : null
+      } : null
+    }));
   }
 
   async approveRefund(id: number, userId: string): Promise<any> {
@@ -2405,7 +2400,7 @@ export class DatabaseStorage implements IStorage {
     if (studentId) conditions.push(eq(arDunningHistory.studentId, studentId));
     if (billId) conditions.push(eq(arDunningHistory.billId, billId));
 
-    return await db.query.arDunningHistory.findMany({
+    const history = await db.query.arDunningHistory.findMany({
       where: conditions.length > 0 ? and(...conditions) : undefined,
       with: {
         student: { with: { user: true } },
@@ -2413,6 +2408,14 @@ export class DatabaseStorage implements IStorage {
       },
       orderBy: [desc(arDunningHistory.sentDate)]
     });
+
+    return history.map(h => ({
+      ...h,
+      student: h.student ? {
+        ...h.student,
+        user: h.student.user ? sanitizeUser(h.student.user) : null
+      } : null
+    }));
   }
 
   // AR Auto-Billing Implementation
