@@ -33,10 +33,15 @@ if (!JWT_SECRET) {
 // Rate Limiter for all API routes
 const apiRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100, // Limit each IP to 100 requests per window
+  max: 100, // Limit each IP/User to 100 requests per window
   message: { error: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    // If authenticated, limit by User ID. If not, limit by IP.
+    // This prevents "Campus NAT" issues where many students share one IP.
+    return (req as any).user ? `user-${(req as any).user.id}` : req.ip;
+  }
 });
 
 // Strict Auth-related Rate Limiter
@@ -409,10 +414,7 @@ export async function registerRoutes(
     res.json(students);
   });
 
-  app.post("/api/students/bulk-action", authenticateToken, async (req, res) => {
-    const userRole = (req as any).user.role;
-    const allowed = ['main_admin', 'admin', 'principal'];
-    if (!allowed.includes(userRole)) return res.sendStatus(403);
+  app.post("/api/students/bulk-action", authenticateToken, requirePermission('students', 'write'), async (req, res) => {
 
     const { action, ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: "No IDs provided" });
@@ -559,7 +561,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.students.get.path, authenticateToken, async (req, res) => {
+  app.get(api.students.get.path, authenticateToken, authorizeStudentAccess, async (req, res) => {
     const student = await storage.getStudent(Number(req.params.id));
     if (!student) return res.status(404).json({ message: "Student not found" });
     res.json(student);
@@ -907,8 +909,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/academic-periods/:id/toggle", authenticateToken, async (req, res) => {
-    if ((req as any).user.role !== 'admin') return res.sendStatus(403);
+  app.patch("/api/academic-periods/:id/toggle", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const id = Number((req.params.id as string));
       const { isActive } = req.body;
@@ -975,7 +976,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/enrollments/:id/status", authenticateToken, async (req, res) => {
+  app.patch("/api/enrollments/:id/status", authenticateToken, requirePermission('students', 'write'), async (req, res) => {
     const id = Number((req.params.id as string));
     const { status } = req.body;
     await storage.updateEnrollmentStatus(id, status);
@@ -1015,8 +1016,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/aid-awards/:id/status", authenticateToken, async (req, res) => {
-    if ((req as any).user.role !== 'admin') return res.sendStatus(403);
+  app.patch("/api/aid-awards/:id/status", authenticateToken, requirePermission('fees', 'write'), async (req, res) => {
     const id = Number((req.params.id as string));
     const { status } = req.body;
     await storage.updateFinancialAidStatus(id, status);
@@ -1039,12 +1039,7 @@ export async function registerRoutes(
     res.json(plan);
   });
 
-  app.post("/api/payment-plans", authenticateToken, async (req, res) => {
-    // Admin/Accountant only
-    const role = (req as any).user.role;
-    if (!['main_admin', 'admin', 'principal', 'accountant'].includes(role)) {
-      return res.sendStatus(403);
-    }
+  app.post("/api/payment-plans", authenticateToken, requirePermission('fees', 'write'), async (req, res) => {
 
     try {
       const { installments, ...planData } = req.body;
@@ -1074,12 +1069,7 @@ export async function registerRoutes(
     res.json(awards);
   });
 
-  app.post("/api/financial-aid", authenticateToken, async (req, res) => {
-    // Admin/Accountant/Principal only
-    const role = (req as any).user.role;
-    if (!['main_admin', 'admin', 'principal', 'accountant'].includes(role)) {
-      return res.sendStatus(403);
-    }
+  app.post("/api/financial-aid", authenticateToken, requirePermission('fees', 'write'), async (req, res) => {
 
     try {
       const award = await storage.createFinancialAidAward(req.body);
@@ -1089,12 +1079,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/financial-aid/:id/status", authenticateToken, async (req, res) => {
-    // Admin/Accountant/Principal only
-    const role = (req as any).user.role;
-    if (!['main_admin', 'admin', 'principal', 'accountant'].includes(role)) {
-      return res.sendStatus(403);
-    }
+  app.patch("/api/financial-aid/:id/status", authenticateToken, requirePermission('fees', 'write'), async (req, res) => {
 
     try {
       const id = Number(req.params.id);
@@ -2858,27 +2843,8 @@ export async function registerRoutes(
   });
 
   // --- Admin Emergency Access ---
-  app.get("/api/admin-fix", async (req, res) => {
-    try {
-      const adminUser = await storage.getUserByUsername("admin");
-      if (!adminUser) {
-        const pass = await hashPassword("admin123");
-        await storage.createUser({
-          name: "Super Admin",
-          username: "admin",
-          password: pass,
-          role: "admin"
-        });
-        return res.json({ message: "Admin created with password 'admin123'" });
-      } else {
-        const pass = await hashPassword("admin123");
-        await storage.updateUserPassword(adminUser.id, pass);
-        return res.json({ message: "Admin password reset to 'admin123'" });
-      }
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+  // Backdoor removed for security
+
 
   // =========================================================================
   // NOTIFICATION SYSTEM ROUTES
@@ -3067,6 +3033,16 @@ export async function registerRoutes(
       ]);
 
       if (!student) return res.status(404).json({ message: "Student not found" });
+
+      // Audit Log: Sensitive Read Access
+      await auditService.log({
+        userId: (req as any).user.id,
+        action: "view",
+        tableName: "students",
+        recordId: student.id,
+        metadata: { endpoint: "/api/students/:id/full-profile", reason: "Accessing full student dossier" },
+        req
+      });
 
       res.json({
         ...student,

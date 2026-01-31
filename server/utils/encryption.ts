@@ -3,7 +3,14 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypt
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "fallback_secret_for_dev_only_32_chars_";
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+
+if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32) {
+    throw new Error("FATAL: ENCRYPTION_KEY is missing or invalid length (must be 32 chars).");
+}
+
+// Type assertion after validation
+const KEY = ENCRYPTION_KEY as string;
 
 /**
  * Encrypts a string using AES-256-GCM.
@@ -11,7 +18,7 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "fallback_secret_for_dev_on
  */
 export function encrypt(text: string): string {
     const iv = randomBytes(IV_LENGTH);
-    const cipher = createCipheriv(ALGORITHM, Buffer.from(ENCRYPTION_KEY.substring(0, 32)), iv);
+    const cipher = createCipheriv(ALGORITHM, Buffer.from(KEY.substring(0, 32)), iv);
 
     let encrypted = cipher.update(text, "utf8", "hex");
     encrypted += cipher.final("hex");
@@ -34,7 +41,7 @@ export function decrypt(encryptedText: string): string {
 
         const iv = Buffer.from(ivHex, "hex");
         const authTag = Buffer.from(authTagHex, "hex");
-        const decipher = createDecipheriv(ALGORITHM, Buffer.from(ENCRYPTION_KEY.substring(0, 32)), iv);
+        const decipher = createDecipheriv(ALGORITHM, Buffer.from(KEY.substring(0, 32)), iv);
 
         decipher.setAuthTag(authTag);
 
