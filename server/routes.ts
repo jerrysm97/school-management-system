@@ -26,17 +26,24 @@ const JWT_SECRET = process.env.SESSION_SECRET || "super_secret_jwt_key_123";
 // RATE LIMITERS
 // ========================================
 
-// Login rate limiter: Protect against brute-force attacks on the scrypt hashing function
-const loginRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per window
+// Rate Limiter for all API routes
+const apiRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100, // Limit each IP to 100 requests per window
+  message: { error: "Too many requests, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Strict Auth-related Rate Limiter
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10, // 10 attempts per 15 mins
+  skipSuccessfulRequests: true,
   message: {
     error: "Too many login attempts",
     message: "Please try again after 15 minutes"
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true, // Only count failed attempts
+  }
 });
 
 async function hashPassword(password: string) {
@@ -89,6 +96,8 @@ const requirePermission = (module: Module, permission: Permission) => {
     const role = normalizeRole(user.role);
 
     if (!hasPermission(role, module, permission)) {
+      // Security Audit: Log unauthorized attempt
+      console.warn(`Unauthorized Access Attempt: User ${user.id} (${role}) tried ${permission} on ${module}`);
       return res.status(403).json({
         error: "Forbidden",
         message: `Requires ${permission} permission on ${module}`
@@ -159,7 +168,7 @@ const authorizeStudentAccess = async (req: Request, res: Response, next: NextFun
       if (student.id !== requestedId) {
         return res.status(403).json({
           error: "Forbidden",
-          message: "You can only access your own records"
+          message: "IDOR Detection: Access to other student records denied."
         });
       }
     } catch (err) {
@@ -219,7 +228,7 @@ export async function registerRoutes(
   app.get("/api/search", searchGlobal);
 
   // --- Auth --- (with rate limiting to prevent brute-force attacks)
-  app.post(api.auth.login.path, loginRateLimiter, async (req, res) => {
+  app.post(api.auth.login.path, authRateLimiter, async (req, res) => {
     const { username, password } = req.body;
     // support login via username (ID) or email
     const user = await storage.getUserByIdentifier(username);
@@ -239,7 +248,7 @@ export async function registerRoutes(
   });
 
   // Google Login Structure
-  app.post("/api/auth/google", async (req, res) => {
+  app.post("/api/auth/google", authRateLimiter, async (req, res) => {
     const { googleId, email, name, avatarUrl, idToken } = req.body;
 
     // TODO: Verify idToken with google-auth-library
@@ -276,8 +285,8 @@ export async function registerRoutes(
     res.json({ token, user });
   });
 
-  // NEW: Change Password Route
-  app.post("/api/auth/change-password", authenticateToken, async (req, res) => {
+  // NEW: Change Password Route (with rate limiting)
+  app.post("/api/auth/change-password", authRateLimiter, authenticateToken, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     const userId = (req as any).user.id;
     const user = await storage.getUser(userId);
@@ -885,8 +894,8 @@ export async function registerRoutes(
     }
   });
 
-  // --- Course History ---
-  app.get("/api/students/:id/course-history", authenticateToken, async (req, res) => {
+  // --- Course History --- (IDOR Protected)
+  app.get("/api/students/:id/course-history", authenticateToken, authorizeStudentAccess, async (req, res) => {
     const studentId = req.params.id;
     const history = await storage.getStudentCourseHistory(studentId);
     res.json(history);
@@ -932,13 +941,7 @@ export async function registerRoutes(
     }
   });
 
-  // Enrollment History
-  app.get("/api/students/:id/enrollments", authenticateToken, async (req, res) => {
-    const studentId = req.params.id;
-    const enrollments = await storage.getEnrollmentHistory(studentId);
-    res.json(enrollments);
-  });
-
+  // Enrollment History (GET is defined in IDOR-protected section below)
   app.post("/api/enrollments", authenticateToken, async (req, res) => {
     try {
       const enrollment = await storage.createEnrollment(req.body);
@@ -977,13 +980,7 @@ export async function registerRoutes(
     }
   });
 
-  // Financial Aid Awards
-  app.get("/api/students/:id/aid", authenticateToken, async (req, res) => {
-    const studentId = req.params.id;
-    const awards = await storage.getFinancialAidAwards(studentId);
-    res.json(awards);
-  });
-
+  // Financial Aid Awards (GET is defined in IDOR-protected section below)
   app.post("/api/aid-awards", authenticateToken, async (req, res) => {
     if ((req as any).user.role !== 'admin') return res.sendStatus(403);
     try {
@@ -1002,12 +999,7 @@ export async function registerRoutes(
     res.json({ message: "Aid status updated" });
   });
 
-  // Bill Calculation Engine
-  app.get("/api/students/:id/bill", authenticateToken, async (req, res) => {
-    const studentId = req.params.id;
-    const bill = await storage.calculateStudentBill(studentId);
-    res.json(bill);
-  });
+  // Bill Calculation Engine (GET is defined in IDOR-protected section below)
 
   // Payment Plans
   app.get("/api/payment-plans", authenticateToken, async (req, res) => {
@@ -1129,7 +1121,7 @@ export async function registerRoutes(
     res.json(hostels);
   });
 
-  app.post("/api/hostels", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/hostels", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const hostel = await storage.createHostel(req.body);
       await auditService.log({
@@ -1151,7 +1143,7 @@ export async function registerRoutes(
     res.json(rooms);
   });
 
-  app.post("/api/hostels/allocate", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/hostels/allocate", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const allocation = await storage.createHostelAllocation(req.body);
       await auditService.log({
@@ -1174,7 +1166,7 @@ export async function registerRoutes(
     res.json(routes);
   });
 
-  app.post("/api/transport/allocate", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/transport/allocate", authenticateToken, requirePermission('students', 'write'), async (req, res) => {
     try {
       const allocation = await storage.createTransportAllocation(req.body);
       await auditService.log({
@@ -1221,7 +1213,7 @@ export async function registerRoutes(
     const years = await storage.getAcademicYears();
     res.json(years);
   });
-  app.post("/api/academic-years", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/academic-years", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const year = await storage.createAcademicYear(req.body);
       res.status(201).json(year);
@@ -1236,7 +1228,7 @@ export async function registerRoutes(
     const semesters = await storage.getSemesters(yearId);
     res.json(semesters);
   });
-  app.post("/api/semesters", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/semesters", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const semester = await storage.createSemester(req.body);
       res.status(201).json(semester);
@@ -1250,7 +1242,7 @@ export async function registerRoutes(
     const depts = await storage.getDepartments();
     res.json(depts);
   });
-  app.post("/api/departments", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/departments", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const dept = await storage.createDepartment(req.body);
       res.status(201).json(dept);
@@ -1265,7 +1257,7 @@ export async function registerRoutes(
     const programs = await storage.getPrograms(deptId);
     res.json(programs);
   });
-  app.post("/api/programs", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/programs", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const program = await storage.createProgram(req.body);
       res.status(201).json(program);
@@ -1509,7 +1501,7 @@ export async function registerRoutes(
     res.json(cats);
   });
 
-  app.post("/api/lms/categories", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/lms/categories", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const cat = await storage.createCourseCategory(req.body);
       res.status(201).json(cat);
@@ -2583,7 +2575,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/finance/depreciation/run-monthly", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/finance/depreciation/run-monthly", authenticateToken, requirePermission('financial_engine', 'write'), async (req, res) => {
     try {
       const entries = await storage.runMonthlyDepreciation();
       res.json({ message: `Created ${entries.length} depreciation entries`, entries });
@@ -2642,7 +2634,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/finance/payroll-runs/:id/process", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/finance/payroll-runs/:id/process", authenticateToken, requirePermission('financial_engine', 'approve'), async (req, res) => {
     try {
       await storage.processPayroll(Number(req.params.id));
       res.json({ message: "Payroll processed" });
@@ -2680,7 +2672,7 @@ export async function registerRoutes(
   });
 
   // W-2/Tax Records
-  app.post("/api/finance/w2-records/generate/:taxYear", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/finance/w2-records/generate/:taxYear", authenticateToken, requirePermission('financial_engine', 'write'), async (req, res) => {
     try {
       const w2s = await storage.generateW2Records(Number(req.params.taxYear));
       res.json({ message: `Generated ${w2s.length} W-2 records`, records: w2s });
@@ -2915,7 +2907,7 @@ export async function registerRoutes(
   });
 
   // Trigger fee reminders (Admin only - manual trigger)
-  app.post("/api/notifications/trigger-fee-reminders", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/notifications/trigger-fee-reminders", authenticateToken, requirePermission('fees', 'write'), async (req, res) => {
     try {
       const count = await notificationService.processUpcomingFeeReminders();
       res.json({ message: `Sent ${count} fee reminders` });
@@ -2925,7 +2917,7 @@ export async function registerRoutes(
   });
 
   // Trigger overdue alerts (Admin only - manual trigger)
-  app.post("/api/notifications/trigger-overdue-alerts", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/notifications/trigger-overdue-alerts", authenticateToken, requirePermission('fees', 'write'), async (req, res) => {
     try {
       const count = await notificationService.processOverdueFeeAlerts();
       res.json({ message: `Sent ${count} overdue alerts` });
@@ -2939,7 +2931,7 @@ export async function registerRoutes(
   // =========================================================================
 
   // Get audit logs (Admin only)
-  app.get("/api/audit-logs", authenticateToken, requireAdmin, async (req, res) => {
+  app.get("/api/audit-logs", authenticateToken, requirePermission('audit_logs', 'read'), async (req, res) => {
     try {
       const { tableName, recordId, userId, action, startDate, endDate, limit, offset } = req.query;
       const logs = await auditService.getAuditLogs({
@@ -2959,7 +2951,7 @@ export async function registerRoutes(
   });
 
   // Get audit history for a specific record
-  app.get("/api/audit-logs/:tableName/:recordId", authenticateToken, requireAdmin, async (req, res) => {
+  app.get("/api/audit-logs/:tableName/:recordId", authenticateToken, requirePermission('audit_logs', 'read'), async (req, res) => {
     try {
       const { tableName, recordId } = req.params;
       const history = await auditService.getRecordHistory(tableName as string, parseInt(recordId as string));
@@ -2984,7 +2976,7 @@ export async function registerRoutes(
   });
 
   // Create fiscal period
-  app.post("/api/fiscal-periods", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/fiscal-periods", authenticateToken, requirePermission('financial_engine', 'write'), async (req, res) => {
     try {
       const period = await auditService.createFiscalPeriod(req.body);
       res.status(201).json(period);
@@ -2994,7 +2986,7 @@ export async function registerRoutes(
   });
 
   // Lock fiscal period
-  app.post("/api/fiscal-periods/:id/lock", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/fiscal-periods/:id/lock", authenticateToken, requirePermission('financial_engine', 'approve'), async (req, res) => {
     try {
       const userId = (req as any).user.id;
       await auditService.lockFiscalPeriod(parseInt(req.params.id as string), userId);
@@ -3005,7 +2997,7 @@ export async function registerRoutes(
   });
 
   // Unlock fiscal period (requires reason)
-  app.post("/api/fiscal-periods/:id/unlock", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/fiscal-periods/:id/unlock", authenticateToken, requirePermission('financial_engine', 'approve'), async (req, res) => {
     try {
       const userId = (req as any).user.id;
       const { reason } = req.body;
@@ -3068,6 +3060,35 @@ export async function registerRoutes(
     }
   });
 
+  // Secure Student Data Routes (IDOR Protected)
+  app.get("/api/students/:id/enrollments", authenticateToken, authorizeStudentAccess, async (req, res) => {
+    try {
+      const enrollments = await storage.getEnrollmentHistory(Number(req.params.id));
+      res.json(enrollments);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/students/:id/aid", authenticateToken, authorizeStudentAccess, async (req, res) => {
+    try {
+      const awards = await storage.getFinancialAidAwards(Number(req.params.id));
+      res.json(awards);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/students/:id/bill", authenticateToken, authorizeStudentAccess, async (req, res) => {
+    try {
+      const bill = await storage.calculateStudentBill(Number(req.params.id));
+      res.json(bill);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
   // --- Staff Appraisals ---
   app.get("/api/hr/appraisals/:employeeId", authenticateToken, async (req, res) => {
     try {
@@ -3078,7 +3099,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/hr/appraisals", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/hr/appraisals", authenticateToken, requirePermission('users', 'write'), async (req, res) => {
     try {
       const appraisal = await storage.createStaffAppraisal(req.body);
       res.status(201).json(appraisal);
@@ -3097,7 +3118,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/research/grants", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/research/grants", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const grant = await storage.createResearchGrant(req.body);
       res.status(201).json(grant);
@@ -3117,7 +3138,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/crm/leads", authenticateToken, requireAdmin, async (req, res) => {
+  app.post("/api/crm/leads", authenticateToken, requirePermission('system_config', 'write'), async (req, res) => {
     try {
       const lead = await storage.createAdmissionsLead(req.body);
       res.status(201).json(lead);

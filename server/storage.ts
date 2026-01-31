@@ -789,8 +789,13 @@ export class DatabaseStorage implements IStorage {
     const query = db.select().from(attendance);
 
     if (classId) {
-      const studentIdsInClass = db.select({ id: students.id }).from(students).where(eq(students.classId, classId));
-      conditions.push(sql`${attendance.studentId} IN ${studentIdsInClass}`);
+      // Correct: Use subquery within Drizzle's DSL (Automatically Parameterized)
+      const studentIdsInClass = db.select({ id: students.id })
+        .from(students)
+        .where(eq(students.classId, classId));
+
+      // Use inArray instead of raw sql template for better security
+      conditions.push(inArray(attendance.studentId, studentIdsInClass));
     }
 
     if (conditions.length > 0) {
