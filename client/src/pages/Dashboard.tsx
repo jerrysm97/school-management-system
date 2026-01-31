@@ -222,16 +222,16 @@ function AdminDashboard() {
       {/* Stats Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Link to="/students">
-          <Card className="glass-card border-l-4 border-l-blue-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
+          <Card className="glass-card border-l-4 border-l-blue-500 hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-300 cursor-pointer bg-gradient-to-br from-white/80 to-blue-50/50 dark:from-card/80 dark:to-blue-900/10">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardDescription className="font-medium text-slate-500">Total Students</CardDescription>
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <GraduationCap className="h-4 w-4 text-blue-700" />
+              <CardDescription className="font-medium text-muted-foreground">Total Students</CardDescription>
+              <div className="p-2.5 bg-blue-500/10 rounded-xl">
+                <GraduationCap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-slate-900">{stats?.totalStudents || 0}</p>
-              <p className="text-xs text-emerald-600 mt-1 flex items-center font-medium bg-emerald-50 w-fit px-1.5 py-0.5 rounded-full">
+              <p className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">{stats?.totalStudents || 0}</p>
+              <p className="text-xs text-emerald-600 mt-2 flex items-center font-medium bg-emerald-500/10 w-fit px-2 py-0.5 rounded-full border border-emerald-500/20">
                 <TrendingUp className="h-3 w-3 mr-1" /> +12% growth
               </p>
             </CardContent>
@@ -239,48 +239,48 @@ function AdminDashboard() {
         </Link>
 
         <Link to="/teachers">
-          <Card className="glass-card border-l-4 border-l-purple-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
+          <Card className="glass-card border-l-4 border-l-purple-500 hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-300 cursor-pointer bg-gradient-to-br from-card/80 to-purple-500/5">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardDescription className="font-medium text-slate-500">Total Teachers</CardDescription>
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Users className="h-4 w-4 text-purple-700" />
+              <CardDescription className="font-medium text-muted-foreground">Total Teachers</CardDescription>
+              <div className="p-2.5 bg-purple-500/10 rounded-xl">
+                <Users className="h-5 w-5 text-purple-600 dark:text-purple-400" />
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-slate-900">{stats?.totalTeachers || 0}</p>
-              <p className="text-xs text-slate-500 mt-1">Active faculty members</p>
+              <p className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">{stats?.totalTeachers || 0}</p>
+              <p className="text-xs text-muted-foreground mt-2">Active faculty members</p>
             </CardContent>
           </Card>
         </Link>
 
         <Link to="/classes">
-          <Card className="glass-card border-l-4 border-l-green-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
+          <Card className="glass-card border-l-4 border-l-emerald-500 hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-300 cursor-pointer bg-gradient-to-br from-card/80 to-emerald-500/5">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardDescription className="font-medium text-slate-500">Active Classes</CardDescription>
-              <div className="p-2 bg-green-100 rounded-lg">
-                <BookOpen className="h-4 w-4 text-green-700" />
+              <CardDescription className="font-medium text-muted-foreground">Active Classes</CardDescription>
+              <div className="p-2.5 bg-emerald-500/10 rounded-xl">
+                <BookOpen className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-slate-900">{stats?.totalClasses || 0}</p>
-              <p className="text-xs text-slate-500 mt-1">Running this term</p>
+              <p className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">{stats?.totalClasses || 0}</p>
+              <p className="text-xs text-muted-foreground mt-2">Running this term</p>
             </CardContent>
           </Card>
         </Link>
 
         <Link to="/attendance">
-          <Card className="glass-card border-l-4 border-l-orange-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
+          <Card className="glass-card border-l-4 border-l-orange-500 hover:shadow-2xl hover:translate-y-[-4px] transition-all duration-300 cursor-pointer bg-gradient-to-br from-card/80 to-orange-500/5">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardDescription className="font-medium text-slate-500">Attendance Rate</CardDescription>
-              <div className="p-2 bg-orange-100 rounded-lg">
-                <Clock className="h-4 w-4 text-orange-700" />
+              <CardDescription className="font-medium text-muted-foreground">Attendance Rate</CardDescription>
+              <div className="p-2.5 bg-orange-500/10 rounded-xl">
+                <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-slate-900">{stats?.attendanceRate ?? 0}%</p>
-              <p className={`text-xs mt-1 flex items-center font-medium w-fit px-1.5 py-0.5 rounded-full ${(stats?.attendanceWeeklyChange ?? 0) >= 0
-                ? 'text-emerald-600 bg-emerald-50'
-                : 'text-red-600 bg-red-50'
+              <p className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">{stats?.attendanceRate ?? 0}%</p>
+              <p className={`text-xs mt-2 flex items-center font-medium w-fit px-2 py-0.5 rounded-full border ${(stats?.attendanceWeeklyChange ?? 0) >= 0
+                ? 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20'
+                : 'text-red-600 bg-red-500/10 border-red-500/20'
                 }`}>
                 {(stats?.attendanceWeeklyChange ?? 0) >= 0 ? (
                   <TrendingUp className="h-3 w-3 mr-1" />
@@ -297,67 +297,76 @@ function AdminDashboard() {
       {/* Charts and Activity Section */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Fee Collection Overview */}
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 glass-card">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-primary" />
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <BarChart3 className="h-5 w-5 text-primary" />
+              </div>
               Financial Overview
             </CardTitle>
             <CardDescription>Fee collection status this term</CardDescription>
           </CardHeader>
           <CardContent>
-            <Link to="/fees" className="grid grid-cols-3 gap-4 mb-6">
-              <div className="text-center p-4 bg-green-50 rounded-lg border border-green-100 hover:shadow-md hover:bg-green-100 transition-all cursor-pointer">
-                <p className="text-2xl font-bold text-green-700">{formatCurrency(feeStats?.totalCollected || 0)}</p>
-                <p className="text-xs text-green-600 mt-1">Collected</p>
+            <Link to="/fees" className="grid grid-cols-3 gap-6 mb-8 mt-2">
+              <div className="text-center p-5 bg-gradient-to-b from-green-50 to-transparent border border-green-100 rounded-2xl hover:shadow-lg transition-all cursor-pointer group">
+                <p className="text-2xl font-bold text-green-700 group-hover:scale-105 transition-transform">{formatCurrency(feeStats?.totalCollected || 0)}</p>
+                <p className="text-xs text-green-600 font-medium uppercase tracking-wider mt-1">Collected</p>
               </div>
-              <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-100 hover:shadow-md hover:bg-yellow-100 transition-all cursor-pointer">
-                <p className="text-2xl font-bold text-yellow-700">{formatCurrency(feeStats?.totalPending || 0)}</p>
-                <p className="text-xs text-yellow-600 mt-1">Pending</p>
+              <div className="text-center p-5 bg-gradient-to-b from-yellow-50 to-transparent border border-yellow-100 rounded-2xl hover:shadow-lg transition-all cursor-pointer group">
+                <p className="text-2xl font-bold text-yellow-700 group-hover:scale-105 transition-transform">{formatCurrency(feeStats?.totalPending || 0)}</p>
+                <p className="text-xs text-yellow-600 font-medium uppercase tracking-wider mt-1">Pending</p>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg border border-red-100 hover:shadow-md hover:bg-red-100 transition-all cursor-pointer">
-                <p className="text-2xl font-bold text-red-700">{formatCurrency(feeStats?.totalOverdue || 0)}</p>
-                <p className="text-xs text-red-600 mt-1">Overdue</p>
+              <div className="text-center p-5 bg-gradient-to-b from-red-50 to-transparent border border-red-100 rounded-2xl hover:shadow-lg transition-all cursor-pointer group">
+                <p className="text-2xl font-bold text-red-700 group-hover:scale-105 transition-transform">{formatCurrency(feeStats?.totalOverdue || 0)}</p>
+                <p className="text-xs text-red-600 font-medium uppercase tracking-wider mt-1">Overdue</p>
               </div>
             </Link>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Collection Rate</span>
-                <span className="font-medium">{collectionRate}%</span>
+                <span className="text-muted-foreground font-medium">Collection Progress</span>
+                <span className="font-bold text-primary">{collectionRate}%</span>
               </div>
-              <Progress value={collectionRate} className="h-2" />
+              <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden p-[2px]">
+                <div
+                  className="h-full bg-gradient-to-r from-primary to-accent rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-1000"
+                  style={{ width: `${collectionRate}%` }}
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Recent Students */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <GraduationCap className="h-5 w-5 text-primary" />
+        <Card className="glass-card">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <GraduationCap className="h-5 w-5 text-primary" />
+                </div>
                 Recent Students
               </CardTitle>
               <CardDescription>Latest admissions</CardDescription>
             </div>
-            <Link to="/students" className="text-xs text-primary hover:underline">View all →</Link>
+            <Link to="/students" className="text-xs font-medium text-primary hover:text-primary/80 transition-colors">View all →</Link>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="pt-4 space-y-4">
             {recentStudents.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No students yet</p>
+              <p className="text-sm text-muted-foreground text-center py-8 italic">No students yet</p>
             ) : (
               recentStudents.map((student: any) => (
-                <Link key={student.id} to={`/students`} className="flex items-center gap-3 hover:bg-muted/50 p-2 -mx-2 rounded-lg transition-colors cursor-pointer">
-                  <Avatar className="h-9 w-9">
-                    <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
+                <Link key={student.id} to={`/students`} className="flex items-center gap-4 hover:bg-slate-50 dark:hover:bg-white/5 p-3 -mx-3 rounded-xl transition-all cursor-pointer group">
+                  <Avatar className="h-10 w-10 border-2 border-slate-100 group-hover:border-primary/20 transition-colors">
+                    <AvatarFallback className="bg-primary/10 text-primary font-bold">
                       {student.user.name.charAt(0)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{student.user.name}</p>
-                    <p className="text-xs text-muted-foreground">{student.admissionNo}</p>
+                    <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors truncate">{student.user.name}</p>
+                    <p className="text-xs text-muted-foreground font-medium">{student.admissionNo}</p>
                   </div>
-                  <Badge variant={student.status === 'approved' ? 'default' : 'secondary'} className="text-xs">
+                  <Badge variant={student.status === 'approved' ? 'default' : 'secondary'} className="text-[10px] px-2 py-0.5 h-6">
                     {student.status}
                   </Badge>
                 </Link>
@@ -370,50 +379,51 @@ function AdminDashboard() {
       {/* Quick Stats Row */}
       <div className="grid gap-4 md:grid-cols-4">
         <Link to="/students?status=approved">
-          <Card className="p-4 flex items-center gap-4 hover:shadow-lg hover:translate-y-[-2px] transition-all cursor-pointer">
-            <div className="p-3 bg-green-100 rounded-full">
-              <CheckCircle className="h-5 w-5 text-green-600" />
+          <Card className="glass-card p-4 flex items-center gap-4 hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+            <div className="p-3 bg-green-500/10 rounded-full group-hover:bg-green-500/20 transition-colors">
+              <CheckCircle className="h-6 w-6 text-green-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{students?.filter((s: any) => s.status === 'approved').length || 0}</p>
-              <p className="text-xs text-muted-foreground">Approved Students</p>
+              <p className="text-2xl font-bold text-foreground group-hover:text-green-700 transition-colors">{students?.filter((s: any) => s.status === 'approved').length || 0}</p>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Approved</p>
             </div>
           </Card>
         </Link>
         <Link to="/students?status=pending">
-          <Card className="p-4 flex items-center gap-4 hover:shadow-lg hover:translate-y-[-2px] transition-all cursor-pointer">
-            <div className="p-3 bg-yellow-100 rounded-full">
-              <Clock className="h-5 w-5 text-yellow-600" />
+          <Card className="glass-card p-4 flex items-center gap-4 hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+            <div className="p-3 bg-yellow-500/10 rounded-full group-hover:bg-yellow-500/20 transition-colors">
+              <Clock className="h-6 w-6 text-yellow-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{students?.filter((s: any) => s.status === 'pending').length || 0}</p>
-              <p className="text-xs text-muted-foreground">Pending Approval</p>
+              <p className="text-2xl font-bold text-foreground group-hover:text-yellow-700 transition-colors">{students?.filter((s: any) => s.status === 'pending').length || 0}</p>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Pending</p>
             </div>
           </Card>
         </Link>
         <Link to="/timetable">
-          <Card className="p-4 flex items-center gap-4 hover:shadow-lg hover:translate-y-[-2px] transition-all cursor-pointer">
-            <div className="p-3 bg-blue-100 rounded-full">
-              <Calendar className="h-5 w-5 text-blue-600" />
+          <Card className="glass-card p-4 flex items-center gap-4 hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+            <div className="p-3 bg-blue-500/10 rounded-full group-hover:bg-blue-500/20 transition-colors">
+              <Calendar className="h-6 w-6 text-blue-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">12</p>
-              <p className="text-xs text-muted-foreground">Upcoming Events</p>
+              <p className="text-2xl font-bold text-foreground group-hover:text-blue-700 transition-colors">12</p>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Events</p>
             </div>
           </Card>
         </Link>
         <Link to="/audit-logs">
-          <Card className="p-4 flex items-center gap-4 hover:shadow-lg hover:translate-y-[-2px] transition-all cursor-pointer">
-            <div className="p-3 bg-purple-100 rounded-full">
-              <AlertTriangle className="h-5 w-5 text-purple-600" />
+          <Card className="glass-card p-4 flex items-center gap-4 hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+            <div className="p-3 bg-purple-500/10 rounded-full group-hover:bg-purple-500/20 transition-colors">
+              <AlertTriangle className="h-6 w-6 text-purple-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">3</p>
-              <p className="text-xs text-muted-foreground">Alerts</p>
+              <p className="text-2xl font-bold text-foreground group-hover:text-purple-700 transition-colors">3</p>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Alerts</p>
             </div>
           </Card>
         </Link>
       </div>
+
     </div>
   );
 }

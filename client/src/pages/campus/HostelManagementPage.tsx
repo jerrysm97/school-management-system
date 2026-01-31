@@ -1,8 +1,10 @@
+
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Link, useLocation } from "wouter";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -51,7 +53,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
         ...options,
         headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            "Authorization": "Bearer " + token,
             ...options.headers,
         },
     });
@@ -65,6 +67,20 @@ export default function HostelManagementPage() {
     const [selectedHostel, setSelectedHostel] = useState<number | null>(null);
     const [addHostelOpen, setAddHostelOpen] = useState(false);
     const [addRoomOpen, setAddRoomOpen] = useState(false);
+    const [addAllocationOpen, setAddAllocationOpen] = useState(false);
+
+    // Check for pre-selected student from URL (e.g. from Admissions)
+    const [location, setLocation] = useLocation();
+    const searchParams = new URLSearchParams(window.location.search);
+    const preSelectedStudentId = searchParams.get("studentId") ? parseInt(searchParams.get("studentId")!) : null;
+    const action = searchParams.get("action");
+
+    // Auto-open allocation modal if action is present
+    if (action === "allocate" && !addAllocationOpen && preSelectedStudentId) {
+        setAddAllocationOpen(true);
+        // Clean URL to avoid reopening on refresh
+        // setLocation("/campus/hostel"); // Don't do this immediately as it might cause re-render loops or clear params too early
+    }
 
     // Fetch hostels
     const { data: hostels = [], isLoading: hostelsLoading } = useQuery<Hostel[]>({
@@ -75,7 +91,7 @@ export default function HostelManagementPage() {
     // Fetch rooms for selected hostel
     const { data: rooms = [] } = useQuery<HostelRoom[]>({
         queryKey: ["/api/hostel-rooms", selectedHostel],
-        queryFn: () => fetchWithAuth(`/api/hostels/${selectedHostel}/rooms`),
+        queryFn: () => fetchWithAuth("/api/hostels/" + selectedHostel + "/rooms"),
         enabled: !!selectedHostel,
     });
 
@@ -83,6 +99,12 @@ export default function HostelManagementPage() {
     const { data: allocations = [] } = useQuery<HostelAllocation[]>({
         queryKey: ["/api/hostel-allocations"],
         queryFn: () => fetchWithAuth("/api/hostel-allocations"),
+    });
+
+    // Fetch students for dropdown
+    const { data: students, isLoading: studentsLoading } = useQuery({
+        queryKey: ["/api/students"],
+        queryFn: () => fetchWithAuth("/api/students"),
     });
 
     // Create hostel mutation
@@ -117,6 +139,22 @@ export default function HostelManagementPage() {
         },
     });
 
+    // Create allocation mutation
+    const createAllocationMutation = useMutation({
+        mutationFn: (data: any) => fetchWithAuth("/api/hostels/allocate", {
+            method: "POST",
+            body: JSON.stringify(data),
+        }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/hostel-allocations"] });
+            setAddAllocationOpen(false);
+            toast({ title: "Success", description: "Room allocated successfully" });
+        },
+        onError: (error: Error) => {
+            toast({ title: "Error", description: error.message, variant: "destructive" });
+        },
+    });
+
     // Stats
     const totalCapacity = hostels.reduce((sum, h) => sum + h.capacity, 0);
     const totalRooms = rooms.length;
@@ -145,6 +183,17 @@ export default function HostelManagementPage() {
             costPerTerm: parseInt(formData.get("costPerTerm") as string) * 100, // Convert to cents
             roomType: formData.get("roomType") as string,
             isAc: formData.get("isAc") === "true",
+        });
+    };
+
+    const handleAllocateRoom = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+        createAllocationMutation.mutate({
+            studentId: parseInt(formData.get("studentId") as string),
+            roomId: parseInt(formData.get("roomId") as string),
+            checkInDate: formData.get("checkInDate") as string,
+            status: 'active',
         });
     };
 
@@ -280,8 +329,8 @@ export default function HostelManagementPage() {
                         {hostels.map((hostel) => (
                             <Card
                                 key={hostel.id}
-                                className={`cursor-pointer transition-all hover:border-indigo-500/50 ${selectedHostel === hostel.id ? "border-indigo-500" : "border-slate-800"
-                                    }`}
+                                className={`cursor - pointer transition - all hover: border - indigo - 500 / 50 ${selectedHostel === hostel.id ? "border-indigo-500" : "border-slate-800"
+                                    } `}
                                 onClick={() => setSelectedHostel(hostel.id)}
                             >
                                 <CardHeader>
@@ -435,11 +484,72 @@ export default function HostelManagementPage() {
                 </TabsContent>
 
                 <TabsContent value="allocations" className="space-y-4">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold">Current Allocations</h3>
+                        <Dialog open={addAllocationOpen} onOpenChange={setAddAllocationOpen}>
+                            <DialogTrigger asChild>
+                                <Button size="sm">
+                                    <Plus className="h-4 w-4 mr-2" /> Allocate Room
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent className="bg-slate-900 border-slate-800">
+                                <DialogHeader>
+                                    <DialogTitle>Allocate Room</DialogTitle>
+                                    <DialogDescription>Assign a student to a hostel room</DialogDescription>
+                                </DialogHeader>
+                                <form onSubmit={handleAllocateRoom} className="space-y-4">
+                                    <div>
+                                        <Label>Student</Label>
+                                        <Select name="studentId" defaultValue={preSelectedStudentId?.toString()}>
+                                            <SelectTrigger className="bg-slate-800 border-slate-700">
+                                                <SelectValue placeholder="Select Student" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {studentsLoading ? (
+                                                    <SelectItem value="loading" disabled>Loading...</SelectItem>
+                                                ) : (
+                                                    students?.map((s: any) => (
+                                                        <SelectItem key={s.id} value={s.id.toString()}>
+                                                            {s.user.name} ({s.admissionNo})
+                                                        </SelectItem>
+                                                    ))
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div>
+                                        <Label>Room</Label>
+                                        <Select name="roomId">
+                                            <SelectTrigger className="bg-slate-800 border-slate-700">
+                                                <SelectValue placeholder="Select Room" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {rooms?.map((r) => (
+                                                    <SelectItem key={r.id} value={r.id.toString()}>
+                                                        {r.roomNumber} ({r.roomType}) - ${r.costPerTerm / 100}/term
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-slate-400 mt-1">Only showing rooms for selected hostel</p>
+                                    </div>
+                                    <div>
+                                        <Label>Check In Date</Label>
+                                        <Input name="checkInDate" type="date" required className="bg-slate-800 border-slate-700" />
+                                    </div>
+                                    <Button type="submit" className="w-full" disabled={createAllocationMutation.isPending}>
+                                        {createAllocationMutation.isPending ? "Allocating..." : "Allocate Room"}
+                                    </Button>
+                                </form>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
+
                     <Table>
                         <TableHeader>
                             <TableRow className="border-slate-800">
-                                <TableHead>Student ID</TableHead>
-                                <TableHead>Room ID</TableHead>
+                                <TableHead>Student</TableHead>
+                                <TableHead>Room</TableHead>
                                 <TableHead>Check In</TableHead>
                                 <TableHead>Check Out</TableHead>
                                 <TableHead>Status</TableHead>
@@ -447,28 +557,36 @@ export default function HostelManagementPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {allocations.map((alloc) => (
-                                <TableRow key={alloc.id} className="border-slate-800">
-                                    <TableCell className="font-medium">#{alloc.studentId}</TableCell>
-                                    <TableCell>Room #{alloc.roomId}</TableCell>
-                                    <TableCell>{alloc.checkInDate}</TableCell>
-                                    <TableCell>{alloc.checkOutDate || "—"}</TableCell>
-                                    <TableCell>
-                                        <Badge variant={alloc.status === "active" ? "default" : "secondary"}>
-                                            {alloc.status}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell>
-                                        {alloc.financeFeeId ? (
-                                            <Badge className="bg-green-500/20 text-green-400">
-                                                <UserCheck className="h-3 w-3 mr-1" /> Linked
+                            {allocations.map((alloc) => {
+                                const student = students?.find((s: any) => s.id === alloc.studentId);
+                                const room = rooms?.find(r => r.id === alloc.roomId);
+                                return (
+                                    <TableRow key={alloc.id} className="border-slate-800">
+                                        <TableCell className="font-medium">
+                                            {student ? student.user.name : `#${alloc.studentId} `}
+                                        </TableCell>
+                                        <TableCell>
+                                            {room ? `${room.roomNumber} (${room.roomType})` : `Room #${alloc.roomId} `}
+                                        </TableCell>
+                                        <TableCell>{new Date(alloc.checkInDate).toLocaleDateString()}</TableCell>
+                                        <TableCell>{alloc.checkOutDate ? new Date(alloc.checkOutDate).toLocaleDateString() : "—"}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={alloc.status === "active" ? "default" : "secondary"}>
+                                                {alloc.status}
                                             </Badge>
-                                        ) : (
-                                            <Badge variant="outline">Not Linked</Badge>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                                        </TableCell>
+                                        <TableCell>
+                                            {alloc.financeFeeId ? (
+                                                <Badge className="bg-green-500/20 text-green-400">
+                                                    <UserCheck className="h-3 w-3 mr-1" /> Linked
+                                                </Badge>
+                                            ) : (
+                                                <Badge variant="outline">Not Linked</Badge>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                )
+                            })}
                             {allocations.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={6} className="text-center text-slate-400 py-8">

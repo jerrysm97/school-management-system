@@ -79,6 +79,10 @@ const navItems = {
     { label: "Timetable", href: "/timetable", icon: Clock },
     { label: "Exams", href: "/exams", icon: CalendarCheck },
     { label: "Fees", href: "/fees", icon: Banknote },
+    { label: "Hostel", href: "/campus/hostel", icon: Building2 },
+    { label: "Transport", href: "/campus/transport", icon: Bus },
+    { label: "Library", href: "/library", icon: BookOpen },
+    { label: "Leave Mgmt", href: "/hr/leave", icon: Calendar },
     { label: "Audit Trail", href: "/audit-logs", icon: History },
     { label: "Settings", href: "/settings", icon: Settings },
   ],
@@ -97,7 +101,11 @@ const navItems = {
     { label: "Timetable", href: "/timetable", icon: Clock },
     { label: "Exams", href: "/exams", icon: CalendarCheck },
     { label: "Recruitment", href: "/hr/recruitment", icon: UserPlus },
+    { label: "Leave Mgmt", href: "/hr/leave", icon: Calendar },
     { label: "Staff", href: "/hr/staff", icon: Users },
+    { label: "Hostel", href: "/campus/hostel", icon: Building2 },
+    { label: "Transport", href: "/campus/transport", icon: Bus },
+    { label: "Library", href: "/library", icon: BookOpen },
     { label: "Reports", href: "/reports", icon: FileText },
   ],
   // Level 2: Accountant - Financial access
@@ -162,43 +170,54 @@ export function Sidebar() {
   const roleInfo = roleConfig[role] || { label: role, color: "bg-gray-500" };
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-300">
+    <div className="flex flex-col h-full bg-gradient-to-b from-[hsl(225,35%,8%)] to-[hsl(225,35%,12%)] text-sidebar-foreground border-r border-[#ffffff0a] relative overflow-hidden">
+      {/* Decorative Glow Effects */}
+      <div className="absolute top-0 left-0 w-full h-32 bg-primary/20 blur-3xl rounded-full translate-y-[-50%] pointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-full h-32 bg-accent/20 blur-3xl rounded-full translate-y-[50%] pointer-events-none" />
+
       {/* Header */}
-      <div className="p-6 border-b border-slate-800">
-        <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-          <ShieldCheck className="h-8 w-8 text-indigo-500" />
-          <span className="bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+      <div className="p-6 border-b border-[#ffffff0a] relative z-10">
+        <h2 className="text-2xl font-bold tracking-tight flex items-center gap-3">
+          <div className="p-2 bg-gradient-to-br from-primary to-accent rounded-xl shadow-lg shadow-primary/25">
+            <ShieldCheck className="h-6 w-6 text-white" />
+          </div>
+          <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-white/70">
             Nexus
           </span>
         </h2>
-        <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider font-medium">
+        <p className="text-xs text-muted-foreground mt-2 pl-1 font-medium tracking-wider uppercase opacity-70">
           Institution Platform
         </p>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-6 px-4 space-y-1">
+      <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1 relative z-10 scrollbar-none">
         {items.map((item) => {
           const isActive = location === item.href;
           return (
             <Link key={item.href} href={item.href}>
               <div
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group cursor-pointer",
+                  "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group cursor-pointer relative overflow-hidden",
                   isActive
-                    ? "bg-indigo-600/10 text-indigo-400 shadow-sm border border-indigo-500/20"
-                    : "hover:bg-slate-800 hover:text-white"
+                    ? "text-white font-medium"
+                    : "text-muted-foreground hover:text-white hover:bg-white/5"
                 )}
               >
+                {isActive && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-transparent border-l-2 border-primary" />
+                )}
+
                 <item.icon
                   className={cn(
-                    "h-5 w-5 transition-colors",
-                    isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-white"
+                    "h-5 w-5 transition-transform duration-300 relative z-10",
+                    isActive ? "text-primary scale-110" : "text-muted-foreground group-hover:text-white"
                   )}
                 />
-                <span className="font-medium">{item.label}</span>
+                <span className="relative z-10">{item.label}</span>
+
                 {isActive && (
-                  <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.5)]" />
+                  <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse" />
                 )}
               </div>
             </Link>
@@ -207,34 +226,35 @@ export function Sidebar() {
       </nav>
 
       {/* User Footer */}
-      <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-        <div className="flex items-center gap-3 mb-4 px-2">
-          <Avatar className="h-10 w-10 border border-slate-700 shadow-sm">
-            <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.username}`} />
-            <AvatarFallback className="bg-slate-800 text-slate-400">
-              {user.username.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate">
-              {user.name || user.username}
-            </p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <div className={cn("h-2 w-2 rounded-full animate-pulse", roleInfo.color)} />
-              <span className="text-xs text-slate-400 capitalize truncate">
-                {roleInfo.label}
-              </span>
+      <div className="p-4 border-t border-[#ffffff0a] bg-black/20 backdrop-blur-md relative z-10">
+        <div className="glass-panel rounded-xl p-3 mb-3 border border-white/5 bg-white/5">
+          <div className="flex items-center gap-3">
+            <Avatar className="h-9 w-9 border border-white/10 shadow-inner ring-2 ring-white/5">
+              <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.username}`} />
+              <AvatarFallback className="bg-primary/20 text-primary">
+                {user.username.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white truncate leading-none">
+                {user.name || user.username}
+              </p>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-4 border-0 bg-opacity-20", roleInfo.color.replace('bg-', 'bg-').replace('500', '500/20 text-white'))}>
+                  {roleInfo.label}
+                </Badge>
+              </div>
             </div>
           </div>
         </div>
 
         <Button
-          variant="outline"
-          className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-950/30 border-slate-800"
+          variant="ghost"
+          className="w-full justify-start text-red-400 hover:text-red-300 hover:bg-red-500/10 h-9 px-2"
           onClick={() => logoutMutation.mutate()}
         >
-          <LogOut className="mr-2 h-4 w-4" />
-          Sign Out
+          <LogOut className="mr-2 h-4 w-4 opacity-70" />
+          <span className="text-sm">Sign Out</span>
         </Button>
       </div>
     </div>
@@ -243,7 +263,7 @@ export function Sidebar() {
   return (
     <>
       {/* Desktop Sidebar */}
-      <div className="hidden md:flex h-screen w-64 flex-col border-r border-slate-800 shadow-2xl bg-slate-900 shrink-0 z-20">
+      <div className="hidden md:flex h-screen w-[280px] flex-col shadow-2xl shrink-0 z-50 transition-all duration-300">
         <SidebarContent />
       </div>
 
@@ -251,11 +271,11 @@ export function Sidebar() {
       <div className="md:hidden fixed top-4 left-4 z-50">
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="bg-slate-900 border-slate-800 text-white hover:bg-slate-800 shadow-lg">
+            <Button variant="outline" size="icon" className="glass-button bg-black/40 border-white/10 text-white hover:bg-black/60 shadow-lg backdrop-blur-md">
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="p-0 bg-slate-900 border-slate-800 w-64 border-r-0">
+          <SheetContent side="left" className="p-0 border-r-0 w-[280px] bg-transparent shadow-2xl">
             <SidebarContent />
           </SheetContent>
         </Sheet>

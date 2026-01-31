@@ -4,7 +4,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AdminLayout } from "@/components/layout/AdminLayout";
+import { StudentLayout } from "@/components/layout/StudentLayout";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/AuthPage";
 import Dashboard from "@/pages/Dashboard";
@@ -48,7 +49,7 @@ import LeaveManagementPage from "@/pages/hr/LeaveManagementPage";
 import { Loader2, AlertCircle } from "lucide-react";
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { CommandPalette } from "@/components/CommandPalette";
+import { OmniSearch } from "@/components/search/OmniSearch";
 
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -119,23 +120,28 @@ function ProtectedRoute({ component: Component, allowedRoles }: { component: Rea
     return <Redirect to="/change-password" />;
   }
 
-  if (!user.mustChangePassword && location === "/change-password") {
-    // Optional: preventing access to change-password if not required? 
-    // Usually allowed. Keeping as is.
-  }
-
   // If on change password page, don't show Sidebar
   if (location === "/change-password") {
     return <Component />;
   }
 
-  return (
-    <div className="flex h-screen bg-background overflow-hidden">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
+  // Determine Layout based on "Cockpit vs Lounge" model
+  // Students and Parents get the "Lounge" (StudentLayout)
+  // Everyone else gets "Cockpit" (AdminLayout)
+  const isLoungeUser = user.role === 'student' || user.role === 'parent';
+
+  if (isLoungeUser) {
+    return (
+      <StudentLayout>
         <Component />
-      </main>
-    </div>
+      </StudentLayout>
+    );
+  }
+
+  return (
+    <AdminLayout>
+      <Component />
+    </AdminLayout>
   );
 }
 
@@ -287,7 +293,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <CommandPalette />
+          <OmniSearch />
           <ErrorBoundary>
             <Toaster />
             <Router />

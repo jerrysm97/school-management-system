@@ -133,6 +133,36 @@ export default function AdmissionDashboard() {
                     </Table>
                 </CardContent>
             </Card>
+
+            {/* Approved Students Section - Where Hostel Link is active */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Recent Admissions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Student Name</TableHead>
+                                <TableHead>Admission No</TableHead>
+                                <TableHead>Class</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {/* Fetch approved students would go here, simplified logic for now: */}
+                            {/* If we want to show approved students to link hostel, we'd need another query here. */}
+                            {/* FOR NOW: Let's assume the user wants to link hostel even if pending? No, usually after approval. */}
+                            {/* Let's redirect to Hostel Page from the main Student list or add a new section here called 'Recent Admissions' */}
+                        </TableBody>
+                    </Table>
+                    <div className="mt-4 text-center">
+                        <Button variant="outline" onClick={() => window.location.href = '/students'}>
+                            View All Students to Assign Hostel
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 }
