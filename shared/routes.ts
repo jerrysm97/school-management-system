@@ -288,6 +288,8 @@ export const api = {
           totalStudents: z.number(),
           totalTeachers: z.number(),
           totalClasses: z.number(),
+          attendanceRate: z.number(),
+          attendanceWeeklyChange: z.number(),
         }),
       },
     },

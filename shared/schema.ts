@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, date, pgEnum, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, date, pgEnum, jsonb, AnyPgColumn, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -51,6 +51,7 @@ export const users = pgTable("users", {
   avatarUrl: text("avatar_url"),
   udf: jsonb("udf").default({}), // Universal Data Fields
   createdAt: timestamp("created_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 // Academic Periods (NEW)
@@ -68,6 +69,7 @@ export const teachers = pgTable("teachers", {
   userId: integer("user_id").notNull().references(() => users.id),
   department: text("department"),
   phone: text("phone"),
+  deletedAt: timestamp("deleted_at"),
 });
 
 // Parents Table
@@ -76,6 +78,7 @@ export const parents = pgTable("parents", {
   userId: integer("user_id").notNull().references(() => users.id),
   phone: text("phone"),
   address: text("address"),
+  deletedAt: timestamp("deleted_at"),
 });
 
 // Classes Table
@@ -85,7 +88,8 @@ export const classes = pgTable("classes", {
   grade: text("grade").notNull(),
   section: text("section").notNull(),
   classTeacherId: integer("class_teacher_id").references(() => teachers.id),
-  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id), // Link to period
+  academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id),
+  deletedAt: timestamp("deleted_at"),
 });
 
 // Students Table (UPDATED - PS_PERSON fields)
@@ -98,6 +102,7 @@ export const students = pgTable("students", {
   gender: genderEnum("gender"),
   phone: text("phone"),
   address: text("address"),
+  deletedAt: timestamp("deleted_at"),
   parentId: integer("parent_id").references(() => parents.id),
   status: studentStatusEnum("status").default("pending").notNull(),
   // New PS_PERSON Fields
@@ -169,6 +174,15 @@ export const fees = pgTable("fees", {
   dueDate: date("due_date").notNull(),
   status: feeStatusEnum("status").default("pending").notNull(),
   description: text("description"),
+  parentFeeId: integer("parent_fee_id"),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => {
+  return {
+    parentFeeFk: foreignKey({
+      columns: [table.parentFeeId],
+      foreignColumns: [table.id],
+    }),
+  };
 });
 
 // Timetable Table
@@ -231,6 +245,7 @@ export const financialTransactions = pgTable("financial_transactions", {
   description: text("description"),
   referenceNo: text("reference_no"), // external payment reference
   createdAt: timestamp("created_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 // Financial Aid Awards - Tracks aid from external sources
@@ -450,6 +465,9 @@ export type FinAuditLog = typeof finAuditLogs.$inferSelect;
 export type InsertFinAuditLog = z.infer<typeof insertFinAuditLogSchema>;
 export type FinancialAidAward = typeof financialAidAwards.$inferSelect;
 export type InsertFinancialAidAward = z.infer<typeof insertFinancialAidAwardSchema>;
+// Convenient aliases
+export type InsertFinAidAward = InsertFinancialAidAward;
+export type FinAidAward = FinancialAidAward;
 
 // ========================================
 // LMS MODULE TABLES
@@ -552,6 +570,33 @@ export const lmsSubmissions = pgTable("lms_submissions", {
   gradedBy: integer("graded_by").references(() => users.id),
 });
 
+// LMS Schemas
+export const insertCourseCategorySchema = createInsertSchema(courseCategories).omit({ id: true });
+export const insertCourseSchema = createInsertSchema(courses).omit({ id: true, createdAt: true });
+export const insertCourseSectionSchema = createInsertSchema(courseSections).omit({ id: true });
+export const insertCourseModuleSchema = createInsertSchema(courseModules).omit({ id: true });
+export const insertLmsAssignmentSchema = createInsertSchema(lmsAssignments).omit({ id: true });
+export const insertLmsQuizSchema = createInsertSchema(lmsQuizzes).omit({ id: true });
+export const insertLmsForumSchema = createInsertSchema(lmsForums).omit({ id: true });
+
+// LMS Type Exports
+export type Course = typeof courses.$inferSelect;
+export type InsertCourse = z.infer<typeof insertCourseSchema>;
+export type CourseCategory = typeof courseCategories.$inferSelect;
+export type InsertCourseCategory = z.infer<typeof insertCourseCategorySchema>;
+export type CourseSection = typeof courseSections.$inferSelect;
+export type InsertCourseSection = z.infer<typeof insertCourseSectionSchema>;
+export type CourseModule = typeof courseModules.$inferSelect;
+export type InsertCourseModule = z.infer<typeof insertCourseModuleSchema>;
+export type LmsAssignment = typeof lmsAssignments.$inferSelect;
+export type InsertLmsAssignment = z.infer<typeof insertLmsAssignmentSchema>;
+export type LmsQuiz = typeof lmsQuizzes.$inferSelect;
+export type InsertLmsQuiz = z.infer<typeof insertLmsQuizSchema>;
+export type LmsForum = typeof lmsForums.$inferSelect;
+export type InsertLmsForum = z.infer<typeof insertLmsForumSchema>;
+export type InsertLmsSubmission = z.infer<typeof insertLmsSubmissionSchema>;
+export type InsertCourseEnrollment = z.infer<typeof insertCourseEnrollmentSchema>;
+
 // ========================================
 // HR HIRING MODULE TABLES
 // ========================================
@@ -582,6 +627,7 @@ export const jobApplications = pgTable("job_applications", {
   interviewNotes: text("interview_notes"),
   status: jobAppStatusEnum("status").default("applied"),
   appliedAt: timestamp("applied_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 // Staff Table (For HR, Finance, Admin - non-teaching)
@@ -682,6 +728,8 @@ export const departments = pgTable("departments", {
   description: text("description"),
   headOfDepartmentId: integer("head_of_department_id"),
   budgetAllocation: integer("budget_allocation").default(0),
+  annualBudget: integer("annual_budget").default(0),
+  spentAmount: integer("spent_amount").default(0),
   contactEmail: text("contact_email"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
@@ -1157,7 +1205,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   id: serial("id").primaryKey(),
   poNumber: text("po_number").unique().notNull(),
   vendorId: integer("vendor_id").notNull().references(() => apVendors.id),
+  departmentId: integer("department_id").references(() => departments.id),
   orderDate: date("order_date").notNull(),
+  poDate: date("po_date"),
   expectedDate: date("expected_date"),
   totalAmount: integer("total_amount").notNull(),
   status: text("status").default("open"), // open, partially_received, received, closed
@@ -1639,6 +1689,7 @@ export const payments = pgTable("payments", {
   paymentDate: date("payment_date").defaultNow().notNull(),
   paymentMethod: paymentMethodV2Enum("payment_method").notNull(),
   transactionReference: text("transaction_reference"),
+  referenceNumber: text("reference_number"), // Alternative reference field
   receiptNumber: text("receipt_number").unique(),
   receiptGenerated: boolean("receipt_generated").default(false),
   collectedById: integer("collected_by").references(() => users.id),
@@ -1646,6 +1697,7 @@ export const payments = pgTable("payments", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 // Payment Allocations 
@@ -1929,3 +1981,135 @@ export type Investment = typeof investments.$inferSelect;
 export type InsertInvestment = z.infer<typeof insertInvestmentSchema>;
 export type InvestmentTransaction = typeof investmentTransactions.$inferSelect;
 export type InsertInvestmentTransaction = z.infer<typeof insertInvestmentTransactionSchema>;
+
+// ============================================================================
+// AUDIT LOGGING SYSTEM
+// ============================================================================
+
+export const auditActionEnum = pgEnum("audit_action", ["create", "update", "delete", "login", "logout", "view", "export", "approve", "reject"]);
+
+// System-wide Audit Logs (Immutable Record)
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id), // Who performed the action
+  action: auditActionEnum("action").notNull(),
+  tableName: text("table_name").notNull(), // Which table was affected
+  recordId: integer("record_id"), // ID of the affected record
+  oldValue: jsonb("old_value"), // Snapshot before change (for updates/deletes)
+  newValue: jsonb("new_value"), // Snapshot after change (for creates/updates)
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  metadata: jsonb("metadata").default({}), // Additional context
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Fiscal Period Lock (Prevents tampering with closed periods)
+export const fiscalPeriodLocks = pgTable("fiscal_period_locks", {
+  id: serial("id").primaryKey(),
+  periodName: text("period_name").notNull(), // e.g., "2024-Q1", "January 2025"
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  isLocked: boolean("is_locked").default(false).notNull(),
+  lockedBy: integer("locked_by").references(() => users.id),
+  lockedAt: timestamp("locked_at"),
+  notes: text("notes"),
+});
+
+// ============================================================================
+// NOTIFICATION SYSTEM
+// ============================================================================
+
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "fee_reminder", "fee_overdue", "payment_received", "exam_result",
+  "attendance_alert", "announcement", "assignment_due", "system"
+]);
+export const notificationChannelEnum = pgEnum("notification_channel", ["in_app", "email", "sms", "push"]);
+export const notificationStatusEnum = pgEnum("notification_status", ["pending", "sent", "failed", "read"]);
+
+// Notification Templates (Admin-configurable)
+export const notificationTemplates = pgTable("notification_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  type: notificationTypeEnum("type").notNull(),
+  subject: text("subject").notNull(), // Email subject / Push title
+  bodyTemplate: text("body_template").notNull(), // Supports {{variable}} placeholders
+  channels: jsonb("channels").default(["in_app"]).notNull(), // Which channels to use
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User Notification Preferences
+export const notificationPreferences = pgTable("notification_preferences", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  type: notificationTypeEnum("type").notNull(),
+  emailEnabled: boolean("email_enabled").default(true).notNull(),
+  smsEnabled: boolean("sms_enabled").default(false).notNull(),
+  pushEnabled: boolean("push_enabled").default(true).notNull(),
+  inAppEnabled: boolean("in_app_enabled").default(true).notNull(),
+});
+
+// Notification Queue (Outgoing notifications)
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id), // Recipient
+  type: notificationTypeEnum("type").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  link: text("link"), // Optional deep link to relevant page
+  channel: notificationChannelEnum("channel").notNull(),
+  status: notificationStatusEnum("status").default("pending").notNull(),
+  sentAt: timestamp("sent_at"),
+  readAt: timestamp("read_at"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Scheduled Notification Jobs (For recurring reminders)
+export const scheduledNotifications = pgTable("scheduled_notifications", {
+  id: serial("id").primaryKey(),
+  templateId: integer("template_id").references(() => notificationTemplates.id),
+  targetQuery: text("target_query").notNull(), // SQL-like filter to find recipients
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  isRecurring: boolean("is_recurring").default(false).notNull(),
+  recurringCron: text("recurring_cron"), // Cron expression for recurring jobs
+  lastRunAt: timestamp("last_run_at"),
+  nextRunAt: timestamp("next_run_at"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ============================================================================
+// SCHEMAS & TYPE EXPORTS FOR NEW TABLES
+// ============================================================================
+
+// Audit Logs
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+
+// Fiscal Period Locks
+export const insertFiscalPeriodLockSchema = createInsertSchema(fiscalPeriodLocks).omit({ id: true });
+export type FiscalPeriodLock = typeof fiscalPeriodLocks.$inferSelect;
+export type InsertFiscalPeriodLock = z.infer<typeof insertFiscalPeriodLockSchema>;
+
+// Notification Templates
+export const insertNotificationTemplateSchema = createInsertSchema(notificationTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type NotificationTemplate = typeof notificationTemplates.$inferSelect;
+export type InsertNotificationTemplate = z.infer<typeof insertNotificationTemplateSchema>;
+
+// Notification Preferences
+export const insertNotificationPreferenceSchema = createInsertSchema(notificationPreferences).omit({ id: true });
+export type NotificationPreference = typeof notificationPreferences.$inferSelect;
+export type InsertNotificationPreference = z.infer<typeof insertNotificationPreferenceSchema>;
+
+// Notifications
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
+// Scheduled Notifications
+export const insertScheduledNotificationSchema = createInsertSchema(scheduledNotifications).omit({ id: true, createdAt: true });
+export type ScheduledNotification = typeof scheduledNotifications.$inferSelect;
+export type InsertScheduledNotification = z.infer<typeof insertScheduledNotificationSchema>;

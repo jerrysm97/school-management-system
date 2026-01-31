@@ -172,8 +172,9 @@ async function fullImport() {
         }
         console.log('   ✓ Academic data created\n');
 
-        // ========== BATCH 7: Fee Structures ==========
-        console.log('📝 [7/10] Creating fee structures...');
+        // ========== BATCH 7: Fee Structures (SKIPPED due to schema mismatch) ==========
+        console.log('📝 [7/10] (Skipping) Creating fee structures...');
+        /*
         const allClasses = await client.query('SELECT id, name FROM classes ORDER BY id');
 
         for (const cls of allClasses.rows) {
@@ -195,9 +196,11 @@ async function fullImport() {
       `);
         }
         console.log('   ✓ Fee structures created\n');
+        */
 
-        // ========== BATCH 8: Student Fees (Assigned to students) ==========
-        console.log('📝 [8/10] Assigning fees to 50 students...');
+        // ========== BATCH 8: Student Fees (SKIPPED due to schema mismatch) ==========
+        console.log('📝 [8/10] (Skipping) Assigning fees to 50 students...');
+        /*
         const allStudents = await client.query('SELECT id, class_id FROM students ORDER BY id LIMIT 50');
 
         const statuses = ['paid', 'partial', 'pending', 'overdue'];
@@ -228,9 +231,11 @@ async function fullImport() {
       `, [student.id, totalAmount, paidAmount, status]);
         }
         console.log('   ✓ Student fees assigned\n');
+        */
 
-        // ========== BATCH 9: Payments ==========
-        console.log('📝 [9/10] Creating payment records...');
+        // ========== BATCH 9: Payments (SKIPPED due to dependency on fees) ==========
+        console.log('📝 [9/10] (Skipping) Creating payment records...');
+        /*
         const accountantId = await client.query("SELECT id FROM users WHERE role='accountant' LIMIT 1");
         const collectedBy = accountantId.rows.length > 0 ? accountantId.rows[0].id : 1;
 
@@ -256,6 +261,7 @@ async function fullImport() {
       `, [student.student_id, student.paid_amount, date, method, refNum, collectedBy]);
         }
         console.log('   ✓ Payment records created\n');
+        */
 
         // ========== BATCH 10: Attendance Records ==========
         console.log('📝 [10/10] Creating attendance records for January 2025...');

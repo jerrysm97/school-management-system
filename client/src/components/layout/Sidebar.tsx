@@ -20,7 +20,8 @@ import {
   UserPlus,
   Menu,
   Check,
-  Calendar
+  Calendar,
+  History
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ const navItems = {
     { label: "Admissions", href: "/admissions/dashboard", icon: UserPlus },
     { label: "Staff", href: "/hr/staff", icon: Users },
     { label: "Fees", href: "/fees", icon: Banknote },
+    { label: "Audit Trail", href: "/audit-logs", icon: History },
     { label: "Settings", href: "/settings", icon: Settings },
   ],
   // Legacy 'admin' maps to main_admin
@@ -71,6 +73,7 @@ const navItems = {
     { label: "Timetable", href: "/timetable", icon: Clock },
     { label: "Exams", href: "/exams", icon: CalendarCheck },
     { label: "Fees", href: "/fees", icon: Banknote },
+    { label: "Audit Trail", href: "/audit-logs", icon: History },
     { label: "Settings", href: "/settings", icon: Settings },
   ],
   // Level 1: Principal - Institutional oversight

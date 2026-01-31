@@ -39,9 +39,12 @@ import AdmissionForm from "@/pages/public/AdmissionForm";
 import AdmissionDashboard from "@/pages/admissions/AdmissionDashboard";
 import LmsDashboard from "@/pages/lms/LmsDashboard";
 import CourseView from "@/pages/lms/CourseView";
+import ReportsPage from "@/pages/ReportsPage";
+import AuditLogsPage from "@/pages/AuditLogsPage";
 import { Loader2, AlertCircle } from "lucide-react";
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { CommandPalette } from "@/components/CommandPalette";
 
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -82,7 +85,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   }
 }
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+function ProtectedRoute({ component: Component, allowedRoles }: { component: React.ComponentType, allowedRoles?: string[] }) {
   const { user, isLoading } = useAuth();
   const [location] = useLocation();
 
@@ -98,15 +101,23 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     return <Redirect to="/auth" />;
   }
 
+  // Check Role Access
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    // If not allowed, redirect to dashboard or 403 like page? 
+    // For now, redirect to dashboard
+    if (location !== "/") {
+      return <Redirect to="/" />;
+    }
+  }
+
   // FORCE CHANGE PASSWORD LOGIC
   if (user.mustChangePassword && location !== "/change-password") {
     return <Redirect to="/change-password" />;
   }
 
-  // If on change-password page but don't need to be there (optional, but good UX)
   if (!user.mustChangePassword && location === "/change-password") {
-    // You can remove this block if you want to allow voluntary password changes via this route
-    // return <Redirect to="/" />;
+    // Optional: preventing access to change-password if not required? 
+    // Usually allowed. Keeping as is.
   }
 
   // If on change password page, don't show Sidebar
@@ -137,98 +148,110 @@ function Router() {
         <ProtectedRoute component={ChangePasswordPage} />
       </Route>
       <Route path="/students">
-        <ProtectedRoute component={StudentsPage} />
+        <ProtectedRoute component={StudentsPage} allowedRoles={['main_admin', 'admin', 'principal', 'teacher', 'accountant']} />
       </Route>
       <Route path="/teachers">
-        <ProtectedRoute component={TeachersPage} />
+        <ProtectedRoute component={TeachersPage} allowedRoles={['main_admin', 'admin', 'principal', 'hr']} />
       </Route>
       <Route path="/classes">
-        <ProtectedRoute component={ClassesPage} />
+        <ProtectedRoute component={ClassesPage} allowedRoles={['main_admin', 'admin', 'principal', 'teacher']} />
       </Route>
       <Route path="/attendance">
-        <ProtectedRoute component={AttendancePage} />
+        <ProtectedRoute component={AttendancePage} allowedRoles={['main_admin', 'admin', 'principal', 'teacher', 'student', 'parent']} />
       </Route>
       <Route path="/fees">
-        <ProtectedRoute component={FeesPage} />
+        <ProtectedRoute component={FeesPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant', 'student', 'parent']} />
       </Route>
       <Route path="/exams">
-        <ProtectedRoute component={ExamsPage} />
+        <ProtectedRoute component={ExamsPage} allowedRoles={['main_admin', 'admin', 'principal', 'teacher', 'student', 'parent']} />
       </Route>
       <Route path="/timetable">
-        <ProtectedRoute component={TimetablePage} />
+        <ProtectedRoute component={TimetablePage} allowedRoles={['main_admin', 'admin', 'principal', 'teacher', 'student', 'parent']} />
       </Route>
       <Route path="/settings">
-        <ProtectedRoute component={SettingsPage} />
+        <ProtectedRoute component={SettingsPage} allowedRoles={['main_admin', 'admin', 'principal']} />
+      </Route>
+      <Route path="/users">
+        <ProtectedRoute component={UsersPage} allowedRoles={['main_admin', 'admin']} />
       </Route>
 
       {/* Finance Module Routes */}
       <Route path="/finance/dashboard">
-        <ProtectedRoute component={FinanceDashboard} />
+        <ProtectedRoute component={FinanceDashboard} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/income">
-        <ProtectedRoute component={IncomePage} />
+        <ProtectedRoute component={IncomePage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/expenses">
-        <ProtectedRoute component={ExpensesPage} />
+        <ProtectedRoute component={ExpensesPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/payments">
-        <ProtectedRoute component={PaymentsPage} />
+        <ProtectedRoute component={PaymentsPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/assets">
-        <ProtectedRoute component={AssetsPage} />
+        <ProtectedRoute component={AssetsPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/budget">
-        <ProtectedRoute component={BudgetPage} />
+        <ProtectedRoute component={BudgetPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/student-ledger">
-        <ProtectedRoute component={StudentLedgerPage} />
+        <ProtectedRoute component={StudentLedgerPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/gl">
-        <ProtectedRoute component={GLManagement} />
+        <ProtectedRoute component={GLManagement} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/donors">
-        <ProtectedRoute component={DonorManagementPage} />
+        <ProtectedRoute component={DonorManagementPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/endowments">
-        <ProtectedRoute component={EndowmentManagementPage} />
+        <ProtectedRoute component={EndowmentManagementPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/payroll">
-        <ProtectedRoute component={PayrollTimesheetsPage} />
+        <ProtectedRoute component={PayrollTimesheetsPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant', 'hr']} />
       </Route>
       <Route path="/finance/fee-structures">
-        <ProtectedRoute component={FeeStructuresPage} />
+        <ProtectedRoute component={FeeStructuresPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/fee-assignment">
-        <ProtectedRoute component={FeeAssignmentPage} />
+        <ProtectedRoute component={FeeAssignmentPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/payment-plans">
-        <ProtectedRoute component={PaymentPlansPage} />
+        <ProtectedRoute component={PaymentPlansPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
       </Route>
       <Route path="/finance/scholarships">
-        <ProtectedRoute component={ScholarshipManagementPage} />
+        <ProtectedRoute component={ScholarshipManagementPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant']} />
+      </Route>
+
+      {/* Reports */}
+      <Route path="/reports">
+        <ProtectedRoute component={ReportsPage} allowedRoles={['main_admin', 'admin', 'principal', 'accountant', 'teacher']} />
       </Route>
 
       {/* HR Module Routes */}
-
       <Route path="/hr/recruitment">
-        <ProtectedRoute component={RecruitmentDashboard} />
+        <ProtectedRoute component={RecruitmentDashboard} allowedRoles={['main_admin', 'admin', 'principal', 'hr']} />
       </Route>
       <Route path="/hr/staff">
-        <ProtectedRoute component={StaffDirectory} />
+        <ProtectedRoute component={StaffDirectory} allowedRoles={['main_admin', 'admin', 'principal', 'hr']} />
       </Route>
 
       {/* Admission Routes */}
       <Route path="/admissions/apply" component={AdmissionForm} />
       <Route path="/admissions/dashboard">
-        <ProtectedRoute component={AdmissionDashboard} />
+        <ProtectedRoute component={AdmissionDashboard} allowedRoles={['main_admin', 'admin', 'principal']} />
       </Route>
 
       {/* LMS Routes */}
       <Route path="/lms">
-        <ProtectedRoute component={LmsDashboard} />
+        <ProtectedRoute component={LmsDashboard} allowedRoles={['main_admin', 'admin', 'principal', 'teacher', 'student']} />
       </Route>
       <Route path="/lms/course/:id">
-        <ProtectedRoute component={CourseView} />
+        <ProtectedRoute component={CourseView} allowedRoles={['main_admin', 'admin', 'principal', 'teacher', 'student']} />
+      </Route>
+
+      {/* Admin Tools Routes */}
+      <Route path="/audit-logs">
+        <ProtectedRoute component={AuditLogsPage} allowedRoles={['main_admin', 'admin']} />
       </Route>
 
       {/* Fallback */}
@@ -242,6 +265,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
+          <CommandPalette />
           <ErrorBoundary>
             <Toaster />
             <Router />

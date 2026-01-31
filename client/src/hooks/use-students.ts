@@ -107,3 +107,33 @@ export function useApproveStudent() {
     }
   });
 }
+
+export function useBulkActionStudent() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({ action, ids }: { action: 'approve' | 'delete', ids: number[] }) => {
+      const res = await fetch("/api/students/bulk-action", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ action, ids }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Bulk action failed");
+      }
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [api.students.list.path] });
+      toast({
+        title: "Bulk Action Success",
+        description: `Successfully processed ${variables.ids.length} students`
+      });
+    },
+    onError: (err) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  });
+}

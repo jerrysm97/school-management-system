@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
+import { useToast } from "@/hooks/use-toast";
 
 function getAuthHeaders() {
     const token = localStorage.getItem("token");
@@ -73,5 +74,36 @@ export function useUpdateFeeStatus() {
             queryClient.invalidateQueries({ queryKey: ["fees"] });
             queryClient.invalidateQueries({ queryKey: ["feeStats"] });
         },
+    });
+}
+
+export function useBulkActionFee() {
+    const queryClient = useQueryClient();
+    const { toast } = useToast();
+
+    return useMutation({
+        mutationFn: async ({ action, ids }: { action: 'paid' | 'delete', ids: number[] }) => {
+            const res = await fetch("/api/fees/bulk-action", {
+                method: "POST",
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ action, ids }),
+            });
+            if (!res.ok) {
+                const error = await res.json();
+                throw new Error(error.message || "Bulk action failed");
+            }
+            return res.json();
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ["fees"] });
+            queryClient.invalidateQueries({ queryKey: ["feeStats"] });
+            toast({
+                title: "Bulk Action Success",
+                description: `Successfully processed ${variables.ids.length} fee records`
+            });
+        },
+        onError: (err) => {
+            toast({ title: "Error", description: err.message, variant: "destructive" });
+        }
     });
 }

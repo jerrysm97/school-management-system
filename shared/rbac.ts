@@ -1,11 +1,25 @@
 // Role-Based Access Control (RBAC) System
 // Based on hierarchical role structure with inherited permissions
 
-export type Role = 'main_admin' | 'principal' | 'accountant' | 'teacher' | 'student' | 'parent';
+// Legacy 'admin' is aliased to 'main_admin' for backward compatibility
+export type Role = 'main_admin' | 'admin' | 'principal' | 'accountant' | 'teacher' | 'student' | 'parent';
+
+// Administrative roles that can access sensitive modules
+export const ADMIN_ROLES: readonly Role[] = ['main_admin', 'admin', 'principal', 'accountant'] as const;
+
+// Roles that bypass student-specific access checks
+export const BYPASS_STUDENT_CHECK_ROLES: readonly Role[] = ['main_admin', 'admin', 'principal', 'accountant'] as const;
+
+// Normalize role (map legacy 'admin' to 'main_admin')
+export function normalizeRole(role: string): Role {
+    return (role === 'admin' ? 'main_admin' : role) as Role;
+}
 
 // Role Hierarchy (Level 0 = highest)
+// Note: 'admin' is treated as 'main_admin' (level 0)
 export const ROLE_HIERARCHY: Record<Role, number> = {
     main_admin: 0,
+    admin: 0, // Legacy alias
     principal: 1,
     accountant: 2,
     teacher: 2,
@@ -35,6 +49,23 @@ export type Permission = 'read' | 'write' | 'delete' | 'approve' | 'admin';
 // Role Permissions Matrix
 export const ROLE_PERMISSIONS: Record<Role, Partial<Record<Module, Permission[]>>> = {
     main_admin: {
+        dashboard: ['read', 'write', 'delete', 'approve', 'admin'],
+        users: ['read', 'write', 'delete', 'approve', 'admin'],
+        students: ['read', 'write', 'delete', 'approve', 'admin'],
+        teachers: ['read', 'write', 'delete', 'approve', 'admin'],
+        classes: ['read', 'write', 'delete', 'approve', 'admin'],
+        attendance: ['read', 'write', 'delete', 'approve', 'admin'],
+        timetable: ['read', 'write', 'delete', 'approve', 'admin'],
+        exams: ['read', 'write', 'delete', 'approve', 'admin'],
+        fees: ['read', 'write', 'delete', 'approve', 'admin'],
+        financial_engine: ['read', 'write', 'delete', 'approve', 'admin'],
+        settings: ['read', 'write', 'delete', 'approve', 'admin'],
+        reports: ['read', 'write', 'delete', 'approve', 'admin'],
+        system_config: ['read', 'write', 'delete', 'approve', 'admin'],
+        audit_logs: ['read', 'write', 'delete', 'approve', 'admin'],
+    },
+    // 'admin' is a legacy alias for 'main_admin' - same permissions
+    admin: {
         dashboard: ['read', 'write', 'delete', 'approve', 'admin'],
         users: ['read', 'write', 'delete', 'approve', 'admin'],
         students: ['read', 'write', 'delete', 'approve', 'admin'],
@@ -108,6 +139,13 @@ export const ROLE_METADATA: Record<Role, {
         level: 0,
         color: 'red',
     },
+    // 'admin' is a legacy alias for 'main_admin'
+    admin: {
+        label: 'Administrator',
+        description: 'Full system-wide access to all modules. Legacy alias for Main Administrator.',
+        level: 0,
+        color: 'red',
+    },
     principal: {
         label: 'Principal',
         description: 'Institutional oversight with access to dashboards, reports, and approvals.',
@@ -158,7 +196,43 @@ export function hasModuleAccess(role: Role, module: Module): boolean {
 }
 
 export function canManageRole(managerRole: Role, targetRole: Role): boolean {
-    return ROLE_HIERARCHY[managerRole] < ROLE_HIERARCHY[targetRole];
+    // Normalize roles to handle legacy 'admin' alias
+    const normalizedManager = normalizeRole(managerRole);
+    const normalizedTarget = normalizeRole(targetRole);
+
+    // Only a strictly higher hierarchical role can manage a lower one
+    // Equal levels cannot manage each other (e.g., accountant cannot manage accountant)
+    return ROLE_HIERARCHY[normalizedManager] < ROLE_HIERARCHY[normalizedTarget];
+}
+
+/**
+ * Check if a role can impersonate another role.
+ * Stricter than canManageRole - only main_admin can impersonate, and cannot impersonate other main_admins.
+ */
+export function canImpersonateRole(impersonatorRole: Role, targetRole: Role): boolean {
+    const normalizedImpersonator = normalizeRole(impersonatorRole);
+    const normalizedTarget = normalizeRole(targetRole);
+
+    // Only main_admin (level 0) can impersonate
+    if (ROLE_HIERARCHY[normalizedImpersonator] !== 0) {
+        return false;
+    }
+
+    // Cannot impersonate another main_admin (prevents lateral movement)
+    if (ROLE_HIERARCHY[normalizedTarget] === 0) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Check if a user role should bypass student-specific access checks.
+ * Administrative roles can access any student's data.
+ */
+export function canBypassStudentCheck(role: Role): boolean {
+    const normalizedRole = normalizeRole(role);
+    return BYPASS_STUDENT_CHECK_ROLES.includes(normalizedRole);
 }
 
 export function getAccessibleModules(role: Role): Module[] {

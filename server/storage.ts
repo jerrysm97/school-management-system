@@ -83,8 +83,7 @@ import {
   type PaymentPlanInstallment, type InsertPaymentPlanInstallment,
 
   // Financial Aid
-  financialAidAwards,
-  type InsertFinAidAward, type FinAidAward,
+  type InsertFinancialAidAward as InsertFinAidAward, type FinancialAidAward as FinAidAward,
 
   // Phase 2: Academic & Fee Foundation
   academicYears, semesters, studentEnrollments,
@@ -119,7 +118,7 @@ import {
   type PurchaseOrder, type InsertPurchaseOrder,
   type PurchaseOrderItem, type InsertPurchaseOrderItem
 } from "@shared/schema";
-import { eq, and, or, desc, sql, sum, lt, ne, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, or, desc, sql, sum, lt, ne, isNull, isNotNull, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Users & Auth
@@ -137,6 +136,8 @@ export interface IStorage {
   getStudentByUserId(userId: number): Promise<Student | undefined>;
   createStudent(student: InsertStudent): Promise<Student>;
   updateStudentStatus(id: number, status: "approved" | "rejected"): Promise<void>;
+  bulkUpdateStudentStatus(ids: number[], status: "approved" | "rejected"): Promise<void>;
+  bulkDeleteStudents(ids: number[]): Promise<void>;
 
   // Teachers
   getTeachers(): Promise<(Teacher & { user: User })[]>;
@@ -154,6 +155,7 @@ export interface IStorage {
 
   // Stats
   getAdminStats(): Promise<{ totalStudents: number; totalTeachers: number; totalClasses: number }>;
+  getAttendanceStats(): Promise<{ attendanceRate: number; attendanceWeeklyChange: number; totalRecords: number }>;
 
   // Fees
   getFees(studentId?: number): Promise<any[]>;
@@ -161,6 +163,8 @@ export interface IStorage {
   bulkCreateFees(feesData: any[]): Promise<any[]>;
   updateFeeStatus(id: number, status: 'paid' | 'pending' | 'overdue'): Promise<any>;
   getFeeStats(): Promise<{ totalCollected: number; totalPending: number; totalOverdue: number }>;
+  bulkUpdateFeeStatus(ids: number[], status: "paid" | "pending"): Promise<void>;
+  bulkDeleteFees(ids: number[]): Promise<void>;
   getOverdueFeesWithoutPenalty(): Promise<any[]>;
 
   // Exams
@@ -215,7 +219,7 @@ export interface IStorage {
   // Financial Engine
   getStudentAccount(studentId: number): Promise<any>;
   createStudentAccount(data: any): Promise<any>;
-  updateStudentBalance(accountId: number, amount: number): Promise<void>;
+  updateStudentBalance(accountId: number, amount: number, userId?: number): Promise<void>;
   setFinancialHold(studentId: number, hasHold: boolean): Promise<void>;
   getFeeStructures(academicPeriodId?: number): Promise<any[]>;
   createFeeStructure(data: any): Promise<any>;
@@ -402,7 +406,6 @@ export interface IStorage {
   // ========================================
   // PROGRAMS MODULE
   // ========================================
-  getPrograms(isActive?: boolean): Promise<Program[]>;
   getProgram(id: number): Promise<Program | undefined>;
   createProgram(data: InsertProgram): Promise<Program>;
   updateProgram(id: number, data: Partial<InsertProgram>): Promise<Program>;
@@ -486,7 +489,7 @@ export interface IStorage {
   createDepartment(dept: InsertDepartment): Promise<Department>;
 
   // Programs
-  getPrograms(departmentId?: number): Promise<Program[]>;
+  getPrograms(departmentId?: number, isActive?: boolean): Promise<Program[]>;
   createProgram(program: InsertProgram): Promise<Program>;
 
   // Student Enrollments
@@ -609,6 +612,14 @@ export class DatabaseStorage implements IStorage {
     await db.update(students).set({ status }).where(eq(students.id, id));
   }
 
+  async bulkUpdateStudentStatus(ids: number[], status: "approved" | "rejected"): Promise<void> {
+    await db.update(students).set({ status }).where(inArray(students.id, ids));
+  }
+
+  async bulkDeleteStudents(ids: number[]): Promise<void> {
+    await db.update(students).set({ deletedAt: new Date() }).where(inArray(students.id, ids));
+  }
+
   async getStudent(id: number): Promise<(Student & { user: User }) | undefined> {
     const [row] = await db
       .select({
@@ -705,6 +716,15 @@ export class DatabaseStorage implements IStorage {
     return await query.execute();
   }
 
+  async updateDailyAttendance(id: number, present: boolean): Promise<Attendance> {
+    const status = present ? 'present' : 'absent';
+    const [updated] = await db.update(attendance)
+      .set({ status: status as any })
+      .where(eq(attendance.id, id))
+      .returning();
+    return updated;
+  }
+
   // Stats
   async getAdminStats(): Promise<{ totalStudents: number; totalTeachers: number; totalClasses: number }> {
     const [s] = await db.select({ count: sql<number>`count(*)` }).from(students);
@@ -716,6 +736,66 @@ export class DatabaseStorage implements IStorage {
       totalTeachers: Number(t.count),
       totalClasses: Number(c.count),
     };
+  }
+
+  // Attendance Stats for Dashboard
+  async getAttendanceStats(): Promise<{ attendanceRate: number; attendanceWeeklyChange: number; totalRecords: number }> {
+    // Get total records
+    const [total] = await db.select({ count: sql<number>`count(*)` }).from(attendance);
+    const totalRecords = Number(total?.count || 0);
+
+    if (totalRecords === 0) {
+      return { attendanceRate: 0, attendanceWeeklyChange: 0, totalRecords: 0 };
+    }
+
+    // Count present + late (both count as "attended")
+    const [attended] = await db.select({ count: sql<number>`count(*)` })
+      .from(attendance)
+      .where(sql`${attendance.status} IN ('present', 'late')`);
+
+    const attendedCount = Number(attended?.count || 0);
+    const attendanceRate = Math.round((attendedCount / totalRecords) * 100);
+
+    // Calculate weekly change
+    const today = new Date();
+    const oneWeekAgo = new Date(today);
+    oneWeekAgo.setDate(today.getDate() - 7);
+    const twoWeeksAgo = new Date(today);
+    twoWeeksAgo.setDate(today.getDate() - 14);
+
+    const todayStr = today.toISOString().split('T')[0];
+    const oneWeekAgoStr = oneWeekAgo.toISOString().split('T')[0];
+    const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0];
+
+    // This week's stats
+    const [thisWeekTotal] = await db.select({ count: sql<number>`count(*)` })
+      .from(attendance)
+      .where(sql`${attendance.date} BETWEEN ${oneWeekAgoStr} AND ${todayStr}`);
+
+    const [thisWeekAttended] = await db.select({ count: sql<number>`count(*)` })
+      .from(attendance)
+      .where(sql`${attendance.date} BETWEEN ${oneWeekAgoStr} AND ${todayStr} AND ${attendance.status} IN ('present', 'late')`);
+
+    // Last week's stats
+    const [lastWeekTotal] = await db.select({ count: sql<number>`count(*)` })
+      .from(attendance)
+      .where(sql`${attendance.date} BETWEEN ${twoWeeksAgoStr} AND ${oneWeekAgoStr}`);
+
+    const [lastWeekAttended] = await db.select({ count: sql<number>`count(*)` })
+      .from(attendance)
+      .where(sql`${attendance.date} BETWEEN ${twoWeeksAgoStr} AND ${oneWeekAgoStr} AND ${attendance.status} IN ('present', 'late')`);
+
+    const thisWeekRate = Number(thisWeekTotal?.count || 0) > 0
+      ? Math.round((Number(thisWeekAttended?.count || 0) / Number(thisWeekTotal?.count || 1)) * 100)
+      : 0;
+
+    const lastWeekRate = Number(lastWeekTotal?.count || 0) > 0
+      ? Math.round((Number(lastWeekAttended?.count || 0) / Number(lastWeekTotal?.count || 1)) * 100)
+      : 0;
+
+    const attendanceWeeklyChange = thisWeekRate - lastWeekRate;
+
+    return { attendanceRate, attendanceWeeklyChange, totalRecords };
   }
 
   // Fees
@@ -796,6 +876,19 @@ export class DatabaseStorage implements IStorage {
     return { totalCollected, totalPending, totalOverdue };
   }
 
+  async bulkUpdateFeeStatus(ids: number[], status: "paid" | "pending"): Promise<void> {
+    if (ids.length === 0) return;
+    await db.update(fees)
+      .set({ status })
+      .where(inArray(fees.id, ids));
+  }
+
+  async bulkDeleteFees(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.delete(fees)
+      .where(inArray(fees.id, ids));
+  }
+
   // Exams
   async getExams(classId?: number): Promise<any[]> {
     const query = db.select().from(exams);
@@ -866,10 +959,32 @@ export class DatabaseStorage implements IStorage {
     return account;
   }
 
-  async updateStudentBalance(accountId: number, amount: number): Promise<void> {
+  /**
+   * Update a student's account balance with audit logging.
+   * @param accountId - The student account ID
+   * @param amount - The new balance amount
+   * @param userId - The ID of the user performing the update (for audit trail)
+   */
+  async updateStudentBalance(accountId: number, amount: number, userId?: number): Promise<void> {
+    // Fetch old account state for audit logging
+    const [oldAccount] = await db.select()
+      .from(studentAccounts)
+      .where(eq(studentAccounts.id, accountId));
+
+    const oldBalance = oldAccount?.currentBalance || 0;
+
+    // Perform the update using parameterized query (Drizzle ORM DSL)
     await db.update(studentAccounts)
       .set({ currentBalance: amount })
       .where(eq(studentAccounts.id, accountId));
+
+    // Log the balance change to the financial audit trail
+    if (userId && oldAccount) {
+      await this.logFinAudit('update', 'student_account', accountId, userId, {
+        old: { currentBalance: oldBalance },
+        new: { currentBalance: amount }
+      });
+    }
   }
 
   async setFinancialHold(studentId: number, hasHold: boolean): Promise<void> {
@@ -916,23 +1031,7 @@ export class DatabaseStorage implements IStorage {
     const [tx] = await db.insert(financialTransactions).values(data).returning();
     return tx;
   }
-
-  async getFinancialAidAwards(studentId: number): Promise<any[]> {
-    return await db.select().from(financialAidAwards).where(eq(financialAidAwards.studentId, studentId));
-  }
-
-  async createFinancialAidAward(data: any): Promise<any> {
-    const [award] = await db.insert(financialAidAwards).values(data).returning();
-    return award;
-  }
-
-  async updateAidStatus(id: number, status: string): Promise<void> {
-    const updates: any = { status: status as any };
-    if (status === 'disbursed') {
-      updates.disbursedAt = new Date();
-    }
-    await db.update(financialAidAwards).set(updates).where(eq(financialAidAwards.id, id));
-  }
+  // NOTE: getFinancialAidAwards, createFinancialAidAward moved to Financial Aid section below
 
   // --- Advanced Finance Module Implementations ---
 
@@ -1029,27 +1128,9 @@ export class DatabaseStorage implements IStorage {
     return newSemester;
   }
 
-  // Departments
-  async getDepartments(): Promise<Department[]> {
-    return await db.select().from(departments);
-  }
-  async createDepartment(dept: InsertDepartment): Promise<Department> {
-    const [newDept] = await db.insert(departments).values(dept).returning();
-    return newDept;
-  }
+  // Departments - see DEPARTMENTS MODULE IMPLEMENTATIONS section below
 
-  // Programs
-  async getPrograms(departmentId?: number): Promise<Program[]> {
-    const query = db.select().from(programs);
-    if (departmentId) {
-      query.where(eq(programs.departmentId, departmentId));
-    }
-    return await query.execute();
-  }
-  async createProgram(program: InsertProgram): Promise<Program> {
-    const [newProgram] = await db.insert(programs).values(program).returning();
-    return newProgram;
-  }
+  // Programs - see PROGRAMS MODULE IMPLEMENTATIONS section below
 
   // Student Enrollments
   async getStudentEnrollments(studentId: number): Promise<StudentEnrollment[]> {
@@ -1105,8 +1186,8 @@ export class DatabaseStorage implements IStorage {
     }
     return await db.select().from(finIncome).orderBy(desc(finIncome.date));
   }
-
-  async getStudentFees(studentId: number): Promise<Fee[]> {
+  // Legacy fees from old system
+  async getLegacyStudentFees(studentId: number): Promise<Fee[]> {
     return await db.select().from(fees).where(eq(fees.studentId, studentId)).orderBy(desc(fees.dueDate));
   }
 
@@ -2468,22 +2549,23 @@ export class DatabaseStorage implements IStorage {
     }
     return await db.select().from(apVendors);
   }
-
-  // AP PO Matching Implementation
-  async createPurchaseOrder(po: any, items: any[]): Promise<PurchaseOrder> {
+  // AP PO Matching Implementation - Uses createPurchaseOrder from line ~1348
+  // This version handles items - use for AP module
+  async createPurchaseOrderWithItems(po: any, items: any[]): Promise<PurchaseOrder> {
     const [newPO] = await db.insert(purchaseOrders).values(po).returning();
 
     for (const item of items) {
-      await db.insert(poLineItems).values({
+      await db.insert(purchaseOrderItems).values({
         ...item,
-        poId: newPO.id
+        purchaseOrderId: newPO.id
       });
     }
 
     return newPO;
   }
 
-  async getPurchaseOrders(vendorId?: number, status?: string): Promise<PurchaseOrder[]> {
+  // AP version with vendor and status filters
+  async getApPurchaseOrders(vendorId?: number, status?: string): Promise<PurchaseOrder[]> {
     const conditions = [];
     if (vendorId) conditions.push(eq(purchaseOrders.vendorId, vendorId));
     if (status) conditions.push(eq(purchaseOrders.status, status));
@@ -2495,9 +2577,9 @@ export class DatabaseStorage implements IStorage {
   async receivePO(poId: number, items: any[]): Promise<void> {
     // items: { id: number, receivedQuantity: number }[]
     for (const item of items) {
-      await db.update(poLineItems)
+      await db.update(purchaseOrderItems)
         .set({ receivedQuantity: item.receivedQuantity })
-        .where(eq(poLineItems.id, item.id));
+        .where(eq(purchaseOrderItems.id, item.id));
     }
 
     // Check if fully received (Simplified: update status to 'received')
@@ -3034,9 +3116,13 @@ export class DatabaseStorage implements IStorage {
   // PROGRAMS MODULE IMPLEMENTATIONS
   // ========================================
 
-  async getPrograms(isActive?: boolean): Promise<Program[]> {
-    if (isActive !== undefined) {
-      return await db.select().from(programs).where(eq(programs.isActive, isActive));
+  async getPrograms(departmentId?: number, isActive?: boolean): Promise<Program[]> {
+    let conditions = [];
+    if (departmentId !== undefined) conditions.push(eq(programs.departmentId, departmentId));
+    if (isActive !== undefined) conditions.push(eq(programs.isActive, isActive));
+
+    if (conditions.length > 0) {
+      return await db.select().from(programs).where(and(...conditions));
     }
     return await db.select().from(programs);
   }

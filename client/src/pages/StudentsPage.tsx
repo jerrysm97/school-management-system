@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -52,7 +53,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertStudentSchema, insertUserSchema } from "@shared/schema";
 import { z } from "zod";
-import { useStudents, useCreateStudent, useApproveStudent } from "@/hooks/use-students";
+import { useStudents, useCreateStudent, useApproveStudent, useBulkActionStudent } from "@/hooks/use-students";
 
 // Generate 8-character alphanumeric ID (e.g., STU2A4B8)
 function generateStudentId(): string {
@@ -86,8 +87,40 @@ export default function StudentsPage() {
 
   const { data: students, isLoading } = useStudents(classFilter !== "all" ? Number(classFilter) : undefined);
   const { data: classes } = useClasses();
+
   const createStudentMutation = useCreateStudent();
   const approveMutation = useApproveStudent();
+  const bulkActionMutation = useBulkActionStudent();
+
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+  const filteredStudents = students?.filter(student =>
+    student.user.name.toLowerCase().includes(search.toLowerCase()) ||
+    student.admissionNo.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const ids = filteredStudents?.map(s => s.id) || [];
+      setSelectedIds(ids);
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectOne = (id: number, checked: boolean) => {
+    if (checked) {
+      setSelectedIds(prev => [...prev, id]);
+    } else {
+      setSelectedIds(prev => prev.filter(pid => pid !== id));
+    }
+  };
+
+  const handleBulkAction = (action: 'approve' | 'delete') => {
+    bulkActionMutation.mutate({ action, ids: selectedIds }, {
+      onSuccess: () => setSelectedIds([])
+    });
+  };
 
   const form = useForm({
     resolver: zodResolver(createStudentFormSchema),
@@ -118,10 +151,7 @@ export default function StudentsPage() {
     }
   }, [isDialogOpen]);
 
-  const filteredStudents = students?.filter(student =>
-    student.user.name.toLowerCase().includes(search.toLowerCase()) ||
-    student.admissionNo.toLowerCase().includes(search.toLowerCase())
-  );
+
 
   function onSubmit(data: any) {
     const submissionData = { ...data };
@@ -611,6 +641,12 @@ export default function StudentsPage() {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
+              <TableHead className="w-[50px]">
+                <Checkbox
+                  checked={filteredStudents?.length! > 0 && selectedIds.length === filteredStudents?.length}
+                  onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                />
+              </TableHead>
               <TableHead>Student</TableHead>
               <TableHead>ID</TableHead>
               <TableHead>Class</TableHead>
@@ -621,15 +657,21 @@ export default function StudentsPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">Loading students...</TableCell>
+                <TableCell colSpan={6} className="h-24 text-center">Loading students...</TableCell>
               </TableRow>
             ) : filteredStudents?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">No students found.</TableCell>
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No students found.</TableCell>
               </TableRow>
             ) : (
               filteredStudents?.map((student) => (
                 <TableRow key={student.id} className="hover:bg-muted/50">
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedIds.includes(student.id)}
+                      onCheckedChange={(checked) => handleSelectOne(student.id, !!checked)}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="h-9 w-9">
@@ -687,6 +729,19 @@ export default function StudentsPage() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-foreground text-background px-6 py-3 rounded-full shadow-xl flex items-center gap-4 animate-in slide-in-from-bottom-5 z-50">
+          <span className="font-medium whitespace-nowrap">{selectedIds.length} selected</span>
+          <div className="h-4 w-px bg-background/20" />
+          <Button variant="secondary" size="sm" onClick={() => handleBulkAction('approve')}>Approve</Button>
+          <Button variant="destructive" size="sm" onClick={() => handleBulkAction('delete')}>
+            {bulkActionMutation.isPending ? "Deleting..." : "Delete"}
+          </Button>
+          <Button variant="ghost" size="sm" className="text-background hover:text-background/80" onClick={() => setSelectedIds([])}>Cancel</Button>
+        </div>
+      )}
     </div>
   );
 }

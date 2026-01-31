@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, GraduationCap, BookOpen, Clock, TrendingUp,
   TrendingDown, DollarSign, Calendar, CheckCircle, AlertTriangle,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import { JobApplication } from "@shared/schema";
 import { useQuery } from "@tanstack/react-query";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -58,8 +60,57 @@ function AdminDashboard() {
 
   if (isLoading) {
     return (
-      <div className="p-8 flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading dashboard...</div>
+      <div className="p-8 space-y-8">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-9 w-32" />
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-4 rounded-full" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-3 w-32" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-4 w-48 mt-2" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-[200px] w-full" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-4 w-24 mt-2" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-9 w-9 rounded-full" />
+                    <div className="space-y-1 flex-1">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-3 w-16" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -82,6 +133,7 @@ function AdminDashboard() {
           <p className="text-muted-foreground mt-1">Welcome back! Here's your institution overview.</p>
         </div>
         <div className="flex items-center gap-2">
+          <NotificationBell />
           <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
             <Activity className="h-3 w-3 mr-1" /> System Online
           </Badge>
@@ -139,9 +191,17 @@ function AdminDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-slate-900">94%</p>
-            <p className="text-xs text-emerald-600 mt-1 flex items-center font-medium bg-emerald-50 w-fit px-1.5 py-0.5 rounded-full">
-              <TrendingUp className="h-3 w-3 mr-1" /> +2% this week
+            <p className="text-3xl font-bold text-slate-900">{stats?.attendanceRate ?? 0}%</p>
+            <p className={`text-xs mt-1 flex items-center font-medium w-fit px-1.5 py-0.5 rounded-full ${(stats?.attendanceWeeklyChange ?? 0) >= 0
+                ? 'text-emerald-600 bg-emerald-50'
+                : 'text-red-600 bg-red-50'
+              }`}>
+              {(stats?.attendanceWeeklyChange ?? 0) >= 0 ? (
+                <TrendingUp className="h-3 w-3 mr-1" />
+              ) : (
+                <TrendingDown className="h-3 w-3 mr-1" />
+              )}
+              {(stats?.attendanceWeeklyChange ?? 0) >= 0 ? '+' : ''}{stats?.attendanceWeeklyChange ?? 0}% this week
             </p>
           </CardContent>
         </Card>
@@ -278,8 +338,56 @@ function PrincipalDashboard() {
 
   if (statsLoading) {
     return (
-      <div className="p-8 flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="p-8 space-y-8">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-9 w-32" />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-4 rounded-full" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-3 w-32" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+          <Card className="col-span-4">
+            <CardHeader>
+              <Skeleton className="h-6 w-32" />
+            </CardHeader>
+            <CardContent className="pl-2">
+              <Skeleton className="h-[350px] w-full" />
+            </CardContent>
+          </Card>
+          <Card className="col-span-3">
+            <CardHeader>
+              <Skeleton className="h-6 w-32" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="flex items-center">
+                    <Skeleton className="h-9 w-9 rounded-full mr-4" />
+                    <div className="space-y-1">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                    <Skeleton className="h-4 w-12 ml-auto" />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }

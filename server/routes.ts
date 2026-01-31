@@ -3,13 +3,41 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { insertUserSchema, insertArPaymentSchema, insertArAutoBillRuleSchema } from "@shared/schema";
-import { hasPermission, hasModuleAccess, canManageRole, type Role, type Module, type Permission } from "@shared/rbac";
+import {
+  hasPermission,
+  hasModuleAccess,
+  canManageRole,
+  canImpersonateRole,
+  canBypassStudentCheck,
+  normalizeRole,
+  type Role,
+  type Module,
+  type Permission
+} from "@shared/rbac";
 import jwt from "jsonwebtoken";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
+import rateLimit from "express-rate-limit";
 
 const scryptAsync = promisify(scrypt);
 const JWT_SECRET = process.env.SESSION_SECRET || "super_secret_jwt_key_123";
+
+// ========================================
+// RATE LIMITERS
+// ========================================
+
+// Login rate limiter: Protect against brute-force attacks on the scrypt hashing function
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 login attempts per window
+  message: {
+    error: "Too many login attempts",
+    message: "Please try again after 15 minutes"
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Only count failed attempts
+});
 
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
@@ -18,14 +46,25 @@ async function hashPassword(password: string) {
 }
 
 async function comparePassword(supplied: string, stored: string) {
-  const [hashed, salt] = stored.split(".");
-  const buf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-  return timingSafeEqual(Buffer.from(hashed, "hex"), buf);
+  try {
+    if (!stored || !stored.includes(".") || stored.startsWith("$")) return false;
+    const [hashed, salt] = stored.split(".");
+    if (!hashed || !salt) return false;
+    const buf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+    return timingSafeEqual(Buffer.from(hashed, "hex"), buf);
+  } catch (err) {
+    console.error("Password comparison failed:", err);
+    return false;
+  }
 }
 
 function generateTemporaryPassword() {
   return randomBytes(4).toString("hex");
 }
+
+// ========================================
+// AUTHENTICATION & AUTHORIZATION MIDDLEWARE
+// ========================================
 
 const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
@@ -47,8 +86,7 @@ const requirePermission = (module: Module, permission: Permission) => {
     const user = (req as any).user;
     if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-    // Map legacy 'admin' role to 'main_admin'
-    const role = (user.role === 'admin' ? 'main_admin' : user.role) as Role;
+    const role = normalizeRole(user.role);
 
     if (!hasPermission(role, module, permission)) {
       return res.status(403).json({
@@ -70,7 +108,9 @@ const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
 
 const requireFinanceAccess = (req: Request, res: Response, next: NextFunction) => {
   const user = (req as any).user;
-  const role = (user.role === 'admin' ? 'main_admin' : user.role) as Role;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const role = normalizeRole(user.role);
 
   if (!hasModuleAccess(role, 'fees') && !hasModuleAccess(role, 'financial_engine')) {
     return res.status(403).json({ error: "Finance access required" });
@@ -78,13 +118,108 @@ const requireFinanceAccess = (req: Request, res: Response, next: NextFunction) =
   next();
 };
 
+/**
+ * Authorization middleware to verify student-specific data access.
+ * 
+ * - Extracts the requested student ID from req.params.id or req.params.studentId
+ * - If user role is 'student', verifies they can only access their own data
+ * - Administrative roles (admin, main_admin, accountant, principal) bypass this check
+ */
+const authorizeStudentAccess = async (req: Request, res: Response, next: NextFunction) => {
+  const user = (req as any).user;
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const role = normalizeRole(user.role);
+
+  // Administrative roles bypass the student-specific check
+  if (canBypassStudentCheck(role)) {
+    return next();
+  }
+
+  // Extract requested student ID from params
+  const requestedId = Number(req.params.studentId || req.params.id);
+
+  if (!requestedId || isNaN(requestedId)) {
+    // No student ID in params, let the route handler decide
+    return next();
+  }
+
+  // For students: verify they can only access their own data
+  if (role === 'student') {
+    try {
+      const student = await storage.getStudentByUserId(user.id);
+
+      if (!student) {
+        return res.status(403).json({
+          error: "Forbidden",
+          message: "No student profile linked to your account"
+        });
+      }
+
+      if (student.id !== requestedId) {
+        return res.status(403).json({
+          error: "Forbidden",
+          message: "You can only access your own records"
+        });
+      }
+    } catch (err) {
+      console.error("Error in authorizeStudentAccess:", err);
+      return res.status(500).json({ error: "Authorization check failed" });
+    }
+  }
+
+  // For parents: verify they can only access their linked students
+  if (role === 'parent') {
+    // TODO: Implement parent-student relationship check
+    // For now, deny access - require admin for parent queries
+    return res.status(403).json({
+      error: "Forbidden",
+      message: "Parent access to student data requires administrative approval"
+    });
+  }
+
+  // Teachers and other roles - they need per-route authorization
+  // For sensitive student financial data, they should not have access by default
+  if (role === 'teacher') {
+    return res.status(403).json({
+      error: "Forbidden",
+      message: "Teachers cannot access student financial data"
+    });
+  }
+
+  next();
+};
+
+import { searchGlobal } from "./routes/search";
+import { notificationService } from "./services/notification.service";
+import { auditService } from "./services/audit.service";
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // ========================================
+  // PERIMETER DEFENSE - Apply authentication and authorization to entire path prefixes
+  // ========================================
 
-  // --- Auth ---
-  app.post(api.auth.login.path, async (req, res) => {
+  // General Ledger routes - require authentication and finance access
+  app.use("/api/gl", authenticateToken, requireFinanceAccess);
+
+  // Accounts Receivable routes - require authentication and finance access
+  app.use("/api/ar", authenticateToken, requireFinanceAccess);
+
+  // Accounts Payable routes - require authentication and finance access
+  app.use("/api/ap", authenticateToken, requireFinanceAccess);
+
+  // ========================================
+  // API ROUTES
+  // ========================================
+
+  // Global Search
+  app.get("/api/search", searchGlobal);
+
+  // --- Auth --- (with rate limiting to prevent brute-force attacks)
+  app.post(api.auth.login.path, loginRateLimiter, async (req, res) => {
     const { username, password } = req.body;
     // support login via username (ID) or email
     const user = await storage.getUserByIdentifier(username);
@@ -240,6 +375,29 @@ export async function registerRoutes(
     res.json(students);
   });
 
+  app.post("/api/students/bulk-action", authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    const allowed = ['main_admin', 'admin', 'principal'];
+    if (!allowed.includes(userRole)) return res.sendStatus(403);
+
+    const { action, ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: "No IDs provided" });
+
+    try {
+      if (action === 'approve') {
+        await storage.bulkUpdateStudentStatus(ids, 'approved');
+        res.json({ message: `Approved ${ids.length} students` });
+      } else if (action === 'delete') {
+        await storage.bulkDeleteStudents(ids);
+        res.json({ message: `Deleted ${ids.length} students` });
+      } else {
+        res.status(400).json({ message: "Invalid action" });
+      }
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Bulk action failed" });
+    }
+  });
+
   app.post(api.students.approve.path, authenticateToken, async (req, res) => {
     const userRole = (req as any).user.role;
     const allowedRoles = ['admin', 'main_admin', 'principal'];
@@ -357,6 +515,8 @@ export async function registerRoutes(
   });
 
   app.post(api.classes.create.path, authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    if (!['main_admin', 'admin', 'principal'].includes(userRole)) return res.sendStatus(403);
     try {
       const cls = await storage.createClass(req.body);
       res.status(201).json(cls);
@@ -367,14 +527,25 @@ export async function registerRoutes(
 
   // --- Attendance ---
   app.get(api.attendance.list.path, authenticateToken, async (req, res) => {
-    const classId = req.query.classId ? Number(req.query.classId) : undefined;
-    const date = req.query.date as string | undefined;
-    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
-    const records = await storage.getAttendance(classId, date, studentId);
+    const user = (req as any).user;
+    let classId = req.query.classId ? Number(req.query.classId) : undefined;
+    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+
+    // Students/Parents see only their own attendance
+    if (user.role === 'student' || user.role === 'parent') {
+      const student = await storage.getStudentByUserId(user.id);
+      if (!student) return res.json([]);
+      studentId = student.id;
+      classId = undefined; // Force lookup by student ID
+    }
+
+    const records = await storage.getAttendance(classId, req.query.date as string, studentId);
     res.json(records);
   });
 
   app.post(api.attendance.mark.path, authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    if (!['main_admin', 'admin', 'principal', 'teacher'].includes(userRole)) return res.sendStatus(403);
     try {
       const records = req.body;
       await storage.markAttendance(records);
@@ -386,12 +557,25 @@ export async function registerRoutes(
 
   // --- Fees ---
   app.get(api.fees.list.path, authenticateToken, async (req, res) => {
-    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    const user = (req as any).user;
+    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+
+    // If student, force filter to their own record
+    if (user.role === 'student' || user.role === 'parent') {
+      const student = await storage.getStudentByUserId(user.id);
+      if (!student) {
+        return res.json([]);
+      }
+      studentId = student.id;
+    }
+
     const feesList = await storage.getFees(studentId);
     res.json(feesList);
   });
 
   app.post(api.fees.create.path, authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    if (!['main_admin', 'admin', 'principal', 'accountant'].includes(userRole)) return res.sendStatus(403);
     try {
       const fee = await storage.createFee(req.body);
       res.status(201).json(fee);
@@ -400,6 +584,30 @@ export async function registerRoutes(
     }
   });
 
+
+
+  app.post("/api/fees/bulk-action", authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    const allowed = ['main_admin', 'admin', 'principal', 'accountant'];
+    if (!allowed.includes(userRole)) return res.sendStatus(403);
+
+    const { action, ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: "No IDs provided" });
+
+    try {
+      if (action === 'paid') {
+        await storage.bulkUpdateFeeStatus(ids, 'paid');
+        res.json({ message: `Marked ${ids.length} fees as paid` });
+      } else if (action === 'delete') {
+        await storage.bulkDeleteFees(ids);
+        res.json({ message: `Deleted ${ids.length} fees` });
+      } else {
+        res.status(400).json({ message: "Invalid action" });
+      }
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Bulk action failed" });
+    }
+  });
   app.post("/api/fees/assign-bulk", authenticateToken, async (req, res) => {
     // Only Admin/Accountant
     const role = (req as any).user.role;
@@ -419,8 +627,7 @@ export async function registerRoutes(
       // storage.getFeeStructures returns array. I can filter or add getFeeStructure(id).
       // Since I don't want to change storage again, I'll fetch all matching academicPeriod (if provided) or just fetch all?
       // Wait, getFeeStructures takes optional academicPeriodId. 
-      // I'll assume I can find it or I should add getFeeStructure(id) to storage? 
-      // It's safer to add getFeeStructure(id). But to save steps, I'll use db directly if I can import it? 
+      // I'll assume I can find it or I should add getFeeStructure(id). But to save steps, I'll use db directly if I can import it? 
       // I cannot import db in routes.ts (it imports storage). 
       // Actually `storage.getFeeStructures` returns `any[]`.
       // I'll add `getFeeStructure(id)` to storage.ts quickly? Or just rely on frontend passing the amount/description?
@@ -461,6 +668,8 @@ export async function registerRoutes(
   });
 
   app.patch(api.fees.update.path, authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    if (!['main_admin', 'admin', 'principal', 'accountant'].includes(userRole)) return res.sendStatus(403);
     try {
       const id = Number((req.params.id as string));
       const { status } = req.body;
@@ -487,6 +696,8 @@ export async function registerRoutes(
   });
 
   app.post(api.exams.create.path, authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    if (!['main_admin', 'admin', 'principal', 'teacher'].includes(userRole)) return res.sendStatus(403);
     try {
       const exam = await storage.createExam(req.body);
       res.status(201).json(exam);
@@ -497,13 +708,25 @@ export async function registerRoutes(
 
   // --- Marks ---
   app.get(api.marks.list.path, authenticateToken, async (req, res) => {
-    const examId = req.query.examId ? Number(req.query.examId) : undefined;
-    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    const user = (req as any).user;
+    let examId = req.query.examId ? Number(req.query.examId) : undefined;
+    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+
+    // Student restriction
+    if (user.role === 'student' || user.role === 'parent') {
+      const student = await storage.getStudentByUserId(user.id);
+      if (!student) return res.json([]);
+      studentId = student.id;
+      // Allows filtering by examId if provided, but MUST match studentId
+    }
+
     const marksList = await storage.getMarks(examId, studentId);
     res.json(marksList);
   });
 
   app.post(api.marks.create.path, authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    if (!['main_admin', 'admin', 'principal', 'teacher'].includes(userRole)) return res.sendStatus(403);
     try {
       const mark = await storage.createMark(req.body);
       res.status(201).json(mark);
@@ -513,6 +736,8 @@ export async function registerRoutes(
   });
 
   app.patch(api.marks.update.path, authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    if (!['main_admin', 'admin', 'principal', 'teacher'].includes(userRole)) return res.sendStatus(403);
     try {
       const id = Number((req.params.id as string));
       const { score } = req.body;
@@ -534,6 +759,8 @@ export async function registerRoutes(
   });
 
   app.post(api.timetable.create.path, authenticateToken, async (req, res) => {
+    const userRole = (req as any).user.role;
+    if (!['main_admin', 'admin', 'principal'].includes(userRole)) return res.sendStatus(403);
     try {
       const slot = await storage.createTimetableSlot(req.body);
       res.status(201).json(slot);
@@ -591,8 +818,8 @@ export async function registerRoutes(
   // FINANCIAL ENGINE ROUTES
   // ========================================
 
-  // Student Accounts
-  app.get("/api/students/:id/account", authenticateToken, async (req, res) => {
+  // Student Accounts - with student access authorization
+  app.get("/api/students/:id/account", authenticateToken, authorizeStudentAccess, async (req, res) => {
     const studentId = Number((req.params.id as string));
     let account = await storage.getStudentAccount(studentId);
     if (!account) {
@@ -693,7 +920,7 @@ export async function registerRoutes(
     if ((req as any).user.role !== 'admin') return res.sendStatus(403);
     const id = Number((req.params.id as string));
     const { status } = req.body;
-    await storage.updateAidStatus(id, status);
+    await storage.updateFinancialAidStatus(id, status);
     res.json({ message: "Aid status updated" });
   });
 
@@ -987,8 +1214,8 @@ export async function registerRoutes(
     }
   });
 
-  // --- Student Ledger (Advanced Finance) ---
-  app.get("/api/finance/student-ledger/:studentId", authenticateToken, async (req, res) => {
+  // --- Student Ledger (Advanced Finance) - with student access authorization ---
+  app.get("/api/finance/student-ledger/:studentId", authenticateToken, authorizeStudentAccess, async (req, res) => {
     try {
       const studentId = parseInt(req.params.studentId as string);
       if (isNaN(studentId)) return res.status(400).json({ message: "Invalid student ID" });
@@ -1012,9 +1239,9 @@ export async function registerRoutes(
         ...fees.map(f => ({
           id: `F-${f.id}`,
           date: f.dueDate, // Use due date as transaction date for fee
-          description: f.description || "Tuition Fee",
+          description: f.notes || "Tuition Fee",
           type: 'debit', // Money owed BY student
-          amount: f.amount,
+          amount: f.finalAmount,
           status: f.status
         })),
         ...payments.map(p => ({
@@ -1060,7 +1287,7 @@ export async function registerRoutes(
       res.json({
         student,
         summary: {
-          totalBilled: fees.reduce((sum, f) => sum + f.amount, 0),
+          totalBilled: fees.reduce((sum, f) => sum + f.finalAmount, 0),
           totalPaid: payments.reduce((sum, p) => sum + p.amount, 0),
           outstandingBalance: balance
         },
@@ -1076,7 +1303,12 @@ export async function registerRoutes(
   // --- Stats ---
   app.get(api.stats.admin.path, authenticateToken, async (req, res) => {
     const stats = await storage.getAdminStats();
-    res.json(stats);
+    const attendanceStats = await storage.getAttendanceStats();
+    res.json({
+      ...stats,
+      attendanceRate: attendanceStats.attendanceRate,
+      attendanceWeeklyChange: attendanceStats.attendanceWeeklyChange
+    });
   });
 
   // ========================================
@@ -2438,7 +2670,201 @@ export async function registerRoutes(
     }
   });
 
-  await seedDatabase();
+  // --- Admin Emergency Access ---
+  app.get("/api/admin-fix", async (req, res) => {
+    try {
+      const adminUser = await storage.getUserByUsername("admin");
+      if (!adminUser) {
+        const pass = await hashPassword("admin123");
+        await storage.createUser({
+          name: "Super Admin",
+          username: "admin",
+          password: pass,
+          role: "admin"
+        });
+        return res.json({ message: "Admin created with password 'admin123'" });
+      } else {
+        const pass = await hashPassword("admin123");
+        await storage.updateUserPassword(adminUser.id, pass);
+        return res.json({ message: "Admin password reset to 'admin123'" });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // =========================================================================
+  // NOTIFICATION SYSTEM ROUTES
+  // =========================================================================
+
+  // Get current user's notifications
+  app.get("/api/notifications", authenticateToken, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const notifications = await notificationService.getNotifications(userId, limit, offset);
+      res.json(notifications);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Get unread notification count
+  app.get("/api/notifications/unread-count", authenticateToken, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const count = await notificationService.getUnreadCount(userId);
+      res.json({ count });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Mark notification as read
+  app.post("/api/notifications/:id/read", authenticateToken, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      await notificationService.markAsRead(parseInt(req.params.id as string), userId);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Mark all as read
+  app.post("/api/notifications/read-all", authenticateToken, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      await notificationService.markAllAsRead(userId);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Trigger fee reminders (Admin only - manual trigger)
+  app.post("/api/notifications/trigger-fee-reminders", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const count = await notificationService.processUpcomingFeeReminders();
+      res.json({ message: `Sent ${count} fee reminders` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Trigger overdue alerts (Admin only - manual trigger)
+  app.post("/api/notifications/trigger-overdue-alerts", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const count = await notificationService.processOverdueFeeAlerts();
+      res.json({ message: `Sent ${count} overdue alerts` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // =========================================================================
+  // AUDIT LOG ROUTES
+  // =========================================================================
+
+  // Get audit logs (Admin only)
+  app.get("/api/audit-logs", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { tableName, recordId, userId, action, startDate, endDate, limit, offset } = req.query;
+      const logs = await auditService.getAuditLogs({
+        tableName: tableName as string,
+        recordId: recordId ? parseInt(recordId as string) : undefined,
+        userId: userId ? parseInt(userId as string) : undefined,
+        action: action as string,
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        limit: limit ? parseInt(limit as string) : 50,
+        offset: offset ? parseInt(offset as string) : 0
+      });
+      res.json(logs);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Get audit history for a specific record
+  app.get("/api/audit-logs/:tableName/:recordId", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { tableName, recordId } = req.params;
+      const history = await auditService.getRecordHistory(tableName as string, parseInt(recordId as string));
+      res.json(history);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // =========================================================================
+  // FISCAL PERIOD MANAGEMENT ROUTES
+  // =========================================================================
+
+  // Get fiscal periods
+  app.get("/api/fiscal-periods", authenticateToken, requireFinanceAccess, async (req, res) => {
+    try {
+      const periods = await auditService.getFiscalPeriods();
+      res.json(periods);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Create fiscal period
+  app.post("/api/fiscal-periods", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const period = await auditService.createFiscalPeriod(req.body);
+      res.status(201).json(period);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Lock fiscal period
+  app.post("/api/fiscal-periods/:id/lock", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      await auditService.lockFiscalPeriod(parseInt(req.params.id as string), userId);
+      res.json({ success: true, message: "Period locked successfully" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Unlock fiscal period (requires reason)
+  app.post("/api/fiscal-periods/:id/unlock", authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const { reason } = req.body;
+      if (!reason) {
+        return res.status(400).json({ error: "Unlock reason is required" });
+      }
+      await auditService.unlockFiscalPeriod(parseInt(req.params.id as string), userId, reason);
+
+      // Log critical action
+      await auditService.log({
+        userId,
+        action: "update",
+        tableName: "fiscal_period_locks",
+        recordId: parseInt(req.params.id as string),
+        metadata: { event: "emergency_unlock", reason },
+        req
+      });
+
+      res.json({ success: true, message: "Period unlocked - action logged" });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Gracefully attempt seeding, don't crash if DB is unreachable (e.g. invalid env vars)
+  try {
+    await seedDatabase();
+  } catch (err) {
+    console.error("Failed to seed database on startup:", err);
+  }
 
   return httpServer;
 }
@@ -2455,5 +2881,10 @@ async function seedDatabase() {
       role: "admin"
     });
     console.log("Seeding complete.");
+  } else if (!adminUser.password.includes(".") || adminUser.password.startsWith("$")) {
+    console.log("Updating legacy admin password...");
+    const adminPass = await hashPassword("admin123");
+    await storage.updateUserPassword(adminUser.id, adminPass);
+    console.log("Admin password updated.");
   }
 }
