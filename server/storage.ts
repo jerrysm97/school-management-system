@@ -626,40 +626,27 @@ export class DatabaseStorage implements IStorage {
 
   // Users
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user ? sanitizeUser(user) : undefined;
+    return this.users.getUser(id);
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user ? sanitizeUser(user) : undefined;
+    return this.users.getUserByUsername(username);
   }
 
   async getUserByIdentifier(identifier: string): Promise<User | undefined> {
-    // Check if identifier is email or username
-    const [user] = await db.select().from(users).where(
-      or(
-        eq(users.email, identifier),
-        eq(users.username, identifier)
-      )
-    );
-    return user ? sanitizeUser(user) : undefined;
+    return this.users.getUserByIdentifier(identifier);
   }
 
   async getUserByGoogleId(googleId: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.googleId, googleId));
-    return user ? sanitizeUser(user) : undefined;
+    return this.users.getUserByGoogleId(googleId);
   }
 
   async createUser(user: InsertUser): Promise<User> {
-    const [newUser] = await db.insert(users).values(user).returning();
-    return newUser;
+    return this.users.createUser(user);
   }
 
   async updateUserPassword(id: number, password: string): Promise<void> {
-    await db.update(users)
-      .set({ password, mustChangePassword: false }) // Reset the flag
-      .where(eq(users.id, id));
+    return this.users.updateUserPassword(id, password);
   }
 
   // Students
