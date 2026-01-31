@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTimetable, useCreateTimetableSlot, useDeleteTimetableSlot } from "@/hooks/use-timetable";
 import { useClasses } from "@/hooks/use-classes";
+import { useSubjects } from "@/hooks/use-subjects";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -40,18 +41,14 @@ const DAY_TEXT_COLORS = ["", "text-blue-700", "text-green-700", "text-purple-700
 
 const createSlotSchema = z.object({
     classId: z.coerce.number().min(1, "Select a class"),
-    subjectName: z.string().min(1, "Subject name required"),
+    subjectId: z.string().min(1, "Subject required"),
     dayOfWeek: z.coerce.number().min(1).max(7),
     startTime: z.string().min(1, "Start time required"),
     endTime: z.string().min(1, "End time required"),
     room: z.string().optional(),
 });
 
-const SUBJECTS = [
-    "Mathematics", "Science", "English", "History", "Geography",
-    "Physics", "Chemistry", "Biology", "Computer Science", "Art",
-    "Music", "Physical Education", "Languages", "Economics"
-];
+const SUBJECTS = []; // Legacy placeholder, now using API
 
 export default function TimetablePage() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -60,6 +57,7 @@ export default function TimetablePage() {
     const { toast } = useToast();
 
     const { data: classes } = useClasses();
+    const { data: subjects } = useSubjects();
     const { data: timetable, isLoading } = useTimetable(selectedClassId);
     const createSlotMutation = useCreateTimetableSlot();
     const deleteSlotMutation = useDeleteTimetableSlot();
@@ -68,7 +66,7 @@ export default function TimetablePage() {
         resolver: zodResolver(createSlotSchema),
         defaultValues: {
             classId: 0,
-            subjectName: "",
+            subjectId: "",
             dayOfWeek: 1,
             startTime: "08:00",
             endTime: "09:00",
@@ -80,7 +78,7 @@ export default function TimetablePage() {
         // Map to API format
         createSlotMutation.mutate({
             classId: data.classId,
-            subjectId: 1, // Placeholder
+            subjectId: data.subjectId,
             dayOfWeek: data.dayOfWeek,
             startTime: data.startTime,
             endTime: data.endTime,
@@ -178,7 +176,7 @@ export default function TimetablePage() {
                                         />
                                         <FormField
                                             control={form.control}
-                                            name="subjectName"
+                                            name="subjectId"
                                             render={({ field }) => (
                                                 <FormItem>
                                                     <FormLabel>Subject *</FormLabel>
@@ -189,8 +187,8 @@ export default function TimetablePage() {
                                                             </SelectTrigger>
                                                         </FormControl>
                                                         <SelectContent>
-                                                            {SUBJECTS.map((s) => (
-                                                                <SelectItem key={s} value={s}>{s}</SelectItem>
+                                                            {subjects?.map((s: any) => (
+                                                                <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
                                                             ))}
                                                         </SelectContent>
                                                     </Select>

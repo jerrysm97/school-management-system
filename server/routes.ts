@@ -137,9 +137,9 @@ const authorizeStudentAccess = async (req: Request, res: Response, next: NextFun
   }
 
   // Extract requested student ID from params
-  const requestedId = Number(req.params.studentId || req.params.id);
+  const requestedId = req.params.studentId || req.params.id;
 
-  if (!requestedId || isNaN(requestedId)) {
+  if (!requestedId) {
     // No student ID in params, let the route handler decide
     return next();
   }
@@ -369,7 +369,7 @@ export async function registerRoutes(
 
   // --- Students ---
   app.get(api.students.list.path, authenticateToken, async (req, res) => {
-    const classId = req.query.classId ? Number(req.query.classId) : undefined;
+    const classId = req.query.classId ? String(req.query.classId) : undefined;
     const status = req.query.status as any;
     const students = await storage.getStudents(classId, status);
     res.json(students);
@@ -403,7 +403,7 @@ export async function registerRoutes(
     const allowedRoles = ['admin', 'main_admin', 'principal'];
     if (!allowedRoles.includes(userRole)) return res.sendStatus(403);
     const { status } = req.body;
-    await storage.updateStudentStatus(Number((req.params.id as string)), status);
+    await storage.updateStudentStatus(req.params.id as string, status);
     res.json({ message: `Student ${status}` });
   });
 
@@ -453,7 +453,7 @@ export async function registerRoutes(
   });
 
   app.get(api.students.get.path, authenticateToken, async (req, res) => {
-    const student = await storage.getStudent(Number((req.params.id as string)));
+    const student = await storage.getStudent(req.params.id);
     if (!student) return res.status(404).json({ message: "Student not found" });
     res.json(student);
   });
@@ -509,6 +509,11 @@ export async function registerRoutes(
   });
 
   // --- Classes ---
+  app.get("/api/subjects", authenticateToken, async (req, res) => {
+    const subjects = await storage.getSubjects();
+    res.json(subjects);
+  });
+
   app.get(api.classes.list.path, authenticateToken, async (req, res) => {
     const classes = await storage.getClasses();
     res.json(classes);
@@ -528,8 +533,8 @@ export async function registerRoutes(
   // --- Attendance ---
   app.get(api.attendance.list.path, authenticateToken, async (req, res) => {
     const user = (req as any).user;
-    let classId = req.query.classId ? Number(req.query.classId) : undefined;
-    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    let classId = req.query.classId as string | undefined;
+    let studentId = req.query.studentId as string | undefined;
 
     // Students/Parents see only their own attendance
     if (user.role === 'student' || user.role === 'parent') {
@@ -558,7 +563,7 @@ export async function registerRoutes(
   // --- Fees ---
   app.get(api.fees.list.path, authenticateToken, async (req, res) => {
     const user = (req as any).user;
-    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    let studentId = req.query.studentId ? String(req.query.studentId) : undefined;
 
     // If student, force filter to their own record
     if (user.role === 'student' || user.role === 'parent') {
@@ -652,7 +657,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Fee Structure not found" });
       }
 
-      const feesToCreate = studentIds.map((studentId: number) => ({
+      const feesToCreate = studentIds.map((studentId: string) => ({
         studentId,
         amount: structure.amount,
         dueDate: new Date(dueDate).toISOString(),
@@ -690,7 +695,7 @@ export async function registerRoutes(
 
   // --- Exams ---
   app.get(api.exams.list.path, authenticateToken, async (req, res) => {
-    const classId = req.query.classId ? Number(req.query.classId) : undefined;
+    const classId = req.query.classId ? String(req.query.classId) : undefined;
     const examsList = await storage.getExams(classId);
     res.json(examsList);
   });
@@ -709,8 +714,8 @@ export async function registerRoutes(
   // --- Marks ---
   app.get(api.marks.list.path, authenticateToken, async (req, res) => {
     const user = (req as any).user;
-    let examId = req.query.examId ? Number(req.query.examId) : undefined;
-    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    let examId = req.query.examId ? String(req.query.examId) : undefined;
+    let studentId = req.query.studentId ? String(req.query.studentId) : undefined;
 
     // Student restriction
     if (user.role === 'student' || user.role === 'parent') {
@@ -753,7 +758,7 @@ export async function registerRoutes(
 
   // --- Timetable ---
   app.get(api.timetable.list.path, authenticateToken, async (req, res) => {
-    const classId = req.query.classId ? Number(req.query.classId) : undefined;
+    const classId = req.query.classId ? String(req.query.classId) : undefined;
     const slots = await storage.getTimetable(classId);
     res.json(slots);
   });
@@ -809,7 +814,7 @@ export async function registerRoutes(
 
   // --- Course History ---
   app.get("/api/students/:id/course-history", authenticateToken, async (req, res) => {
-    const studentId = Number((req.params.id as string));
+    const studentId = req.params.id;
     const history = await storage.getStudentCourseHistory(studentId);
     res.json(history);
   });
@@ -820,7 +825,7 @@ export async function registerRoutes(
 
   // Student Accounts - with student access authorization
   app.get("/api/students/:id/account", authenticateToken, authorizeStudentAccess, async (req, res) => {
-    const studentId = Number((req.params.id as string));
+    const studentId = req.params.id;
     let account = await storage.getStudentAccount(studentId);
     if (!account) {
       // Auto-create account if doesn't exist
@@ -831,7 +836,7 @@ export async function registerRoutes(
 
   app.patch("/api/students/:id/account/hold", authenticateToken, async (req, res) => {
     if ((req as any).user.role !== 'admin') return res.sendStatus(403);
-    const studentId = Number((req.params.id as string));
+    const studentId = req.params.id;
     const { hasHold } = req.body;
     await storage.setFinancialHold(studentId, hasHold);
     res.json({ message: "Hold status updated" });
@@ -839,7 +844,7 @@ export async function registerRoutes(
 
   // Fee Structures
   app.get("/api/fee-structures", authenticateToken, async (req, res) => {
-    const periodId = req.query.academicPeriodId ? Number(req.query.academicPeriodId) : undefined;
+    const periodId = req.query.academicPeriodId ? String(req.query.academicPeriodId) : undefined;
     const structures = await storage.getFeeStructures(periodId);
     res.json(structures);
   });
@@ -856,7 +861,7 @@ export async function registerRoutes(
 
   // Enrollment History
   app.get("/api/students/:id/enrollments", authenticateToken, async (req, res) => {
-    const studentId = Number((req.params.id as string));
+    const studentId = req.params.id;
     const enrollments = await storage.getEnrollmentHistory(studentId);
     res.json(enrollments);
   });
@@ -879,7 +884,7 @@ export async function registerRoutes(
 
   // Financial Transactions
   app.get("/api/accounts/:id/transactions", authenticateToken, async (req, res) => {
-    const accountId = Number((req.params.id as string));
+    const accountId = req.params.id;
     const transactions = await storage.getFinancialTransactions(accountId);
     res.json(transactions);
   });
@@ -901,7 +906,7 @@ export async function registerRoutes(
 
   // Financial Aid Awards
   app.get("/api/students/:id/aid", authenticateToken, async (req, res) => {
-    const studentId = Number((req.params.id as string));
+    const studentId = req.params.id;
     const awards = await storage.getFinancialAidAwards(studentId);
     res.json(awards);
   });
@@ -926,14 +931,14 @@ export async function registerRoutes(
 
   // Bill Calculation Engine
   app.get("/api/students/:id/bill", authenticateToken, async (req, res) => {
-    const studentId = Number((req.params.id as string));
+    const studentId = req.params.id;
     const bill = await storage.calculateStudentBill(studentId);
     res.json(bill);
   });
 
   // Payment Plans
   app.get("/api/payment-plans", authenticateToken, async (req, res) => {
-    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
     const plans = await storage.getPaymentPlans(studentId);
     res.json(plans);
   });
@@ -975,7 +980,7 @@ export async function registerRoutes(
 
   // Financial Aid
   app.get("/api/financial-aid", authenticateToken, async (req, res) => {
-    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
     const awards = await storage.getFinancialAidAwards(studentId);
     res.json(awards);
   });
@@ -1138,7 +1143,7 @@ export async function registerRoutes(
   // --- Income Management ---
   // RBAC: Accountant/Admin can read/write.
   app.get("/api/finance/income", authenticateToken, requireFinanceAccess, async (req, res) => {
-    const periodId = req.query.periodId ? Number(req.query.periodId) : undefined;
+    const periodId = req.query.periodId ? String(req.query.periodId) : undefined;
     const type = req.query.type as string;
     const incomes = await storage.getFinIncomes(periodId, type);
     res.json(incomes);
@@ -1217,8 +1222,8 @@ export async function registerRoutes(
   // --- Student Ledger (Advanced Finance) - with student access authorization ---
   app.get("/api/finance/student-ledger/:studentId", authenticateToken, authorizeStudentAccess, async (req, res) => {
     try {
-      const studentId = parseInt(req.params.studentId as string);
-      if (isNaN(studentId)) return res.status(400).json({ message: "Invalid student ID" });
+      const studentId = req.params.studentId;
+      if (!studentId) return res.status(400).json({ message: "Invalid student ID" });
 
       // 1. Get Student Details (to find linked User ID)
       const student = await storage.getStudent(studentId);
@@ -1625,7 +1630,7 @@ export async function registerRoutes(
 
   app.get("/api/ar/bills", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+      const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
       const status = req.query.status as string | undefined;
       const bills = await storage.getStudentBills(studentId, status);
       res.json(bills);
@@ -1669,7 +1674,7 @@ export async function registerRoutes(
   // AR Refunds
   app.get("/api/ar/refunds", authenticateToken, requireFinanceAccess, async (req, res) => {
     const status = req.query.status as string | undefined;
-    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
     try {
       const refunds = await storage.getRefundRequests(status, studentId);
       res.json(refunds);
@@ -1744,7 +1749,7 @@ export async function registerRoutes(
 
   app.post("/api/ar/generate-bill/:studentId", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const studentId = parseInt(req.params.studentId as string);
+      const studentId = req.params.studentId as string;
       if (!req.body.enrollmentId) return res.status(400).send("Missing enrollmentId");
 
       const bills = await storage.generateBillsFromEnrollment(studentId, req.body.enrollmentId);
@@ -1914,7 +1919,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/ar/dunning/history", authenticateToken, requireFinanceAccess, async (req, res) => {
-    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
     const billId = req.query.billId ? Number(req.query.billId) : undefined;
     try {
       const history = await storage.getDunningHistory(studentId, billId);
@@ -1926,7 +1931,7 @@ export async function registerRoutes(
 
   app.get("/api/ar/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+      const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
       const payments = await storage.getArPayments(studentId);
       res.json(payments);
     } catch (e: any) {
@@ -2519,7 +2524,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/finance/w2-records/:taxYear", authenticateToken, requireFinanceAccess, async (req, res) => {
-    const employeeId = req.query.employeeId ? Number(req.query.employeeId) : undefined;
+    const employeeId = req.query.employeeId ? String(req.query.employeeId) : undefined;
     const records = await storage.getW2Records(Number(req.params.taxYear), employeeId);
     res.json(records);
   });
@@ -2530,7 +2535,7 @@ export async function registerRoutes(
 
   // Payments
   app.get("/api/finance/payments/student/:studentId", authenticateToken, requireFinanceAccess, async (req, res) => {
-    const payments = await storage.getPaymentsByStudent(Number(req.params.studentId));
+    const payments = await storage.getPaymentsByStudent(req.params.studentId as string);
     res.json(payments);
   });
 
@@ -2574,7 +2579,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/finance/scholarships/applications", authenticateToken, async (req, res) => {
-    const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
     const apps = await storage.getScholarshipApplications(studentId);
     res.json(apps);
   });
@@ -2589,7 +2594,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/finance/scholarships/student/:studentId", authenticateToken, async (req, res) => {
-    const awards = await storage.getStudentScholarships(Number(req.params.studentId));
+    const awards = await storage.getStudentScholarships(req.params.studentId as string);
     res.json(awards);
   });
 

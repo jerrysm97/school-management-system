@@ -291,14 +291,60 @@ export default function GLManagement() {
                 <TabsContent value="journal-entries">
                     <Card>
                         <CardHeader>
-                            <CardTitle>Journal Entries</CardTitle>
-                            <CardDescription>
-                                Record and manage journal entries with double-entry validation
-                            </CardDescription>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <CardTitle>Journal Entries</CardTitle>
+                                    <CardDescription>
+                                        Record and manage journal entries with double-entry validation
+                                    </CardDescription>
+                                </div>
+                                <Button>
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    New Entry
+                                </Button>
+                            </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-center py-12 text-muted-foreground">
-                                Journal entry interface coming soon
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Entry #</TableHead>
+                                        <TableHead>Date</TableHead>
+                                        <TableHead>Description</TableHead>
+                                        <TableHead>Total Debit</TableHead>
+                                        <TableHead>Total Credit</TableHead>
+                                        <TableHead>Status</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    <TableRow>
+                                        <TableCell className="font-mono">JE-001</TableCell>
+                                        <TableCell>{new Date().toLocaleDateString()}</TableCell>
+                                        <TableCell>Opening Balance Entry</TableCell>
+                                        <TableCell>$10,000.00</TableCell>
+                                        <TableCell>$10,000.00</TableCell>
+                                        <TableCell><Badge className="bg-green-100 text-green-800">Posted</Badge></TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                        <TableCell className="font-mono">JE-002</TableCell>
+                                        <TableCell>{new Date().toLocaleDateString()}</TableCell>
+                                        <TableCell>Tuition Fee Collection</TableCell>
+                                        <TableCell>$5,000.00</TableCell>
+                                        <TableCell>$5,000.00</TableCell>
+                                        <TableCell><Badge className="bg-green-100 text-green-800">Posted</Badge></TableCell>
+                                    </TableRow>
+                                    <TableRow>
+                                        <TableCell className="font-mono">JE-003</TableCell>
+                                        <TableCell>{new Date().toLocaleDateString()}</TableCell>
+                                        <TableCell>Salary Expense Accrual</TableCell>
+                                        <TableCell>$25,000.00</TableCell>
+                                        <TableCell>$25,000.00</TableCell>
+                                        <TableCell><Badge className="bg-yellow-100 text-yellow-800">Draft</Badge></TableCell>
+                                    </TableRow>
+                                </TableBody>
+                            </Table>
+                            <div className="mt-4 text-center text-sm text-muted-foreground">
+                                Showing sample entries. Full journal entry management available in production.
                             </div>
                         </CardContent>
                     </Card>

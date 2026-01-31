@@ -36,19 +36,97 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-8">
-      <h1 className="text-3xl font-display font-bold mb-2">Welcome back, {user?.name}!</h1>
-      <p className="text-muted-foreground">Here is an overview of your activity.</p>
-
-      <div className="mt-8 p-12 border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center text-center">
-        <div className="h-16 w-16 bg-muted rounded-full flex items-center justify-center mb-4">
-          <Clock className="h-8 w-8 text-muted-foreground" />
+    <div className="p-6 md:p-8 space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-display font-bold text-foreground flex items-center gap-2">
+            <Sparkles className="h-8 w-8 text-primary" />
+            Welcome back, {user?.name}!
+          </h1>
+          <p className="text-muted-foreground mt-1">Here is an overview of your activity.</p>
         </div>
-        <h3 className="text-lg font-semibold">Coming Soon</h3>
-        <p className="text-muted-foreground max-w-md mt-2">
-          Specific dashboards for {user?.role}s are under construction.
-        </p>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-indigo-600 border-indigo-200 bg-indigo-50">
+            <UserCheck className="h-3 w-3 mr-1" />
+            {user?.role?.replace('_', ' ')}
+          </Badge>
+        </div>
       </div>
+
+      <div className="grid gap-6 md:grid-cols-3">
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-blue-700 flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Account Status
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xl font-bold text-blue-700">Active</p>
+            <p className="text-xs text-blue-600 mt-1">Your account is in good standing</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-50 to-green-100/50 border-green-200">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-green-700 flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              Member Since
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xl font-bold text-green-700">
+              {new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+            </p>
+            <p className="text-xs text-green-600 mt-1">Welcome to the platform</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-purple-50 to-purple-100/50 border-purple-200">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-purple-700 flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Quick Actions
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xl font-bold text-purple-700">Explore</p>
+            <p className="text-xs text-purple-600 mt-1">Navigate using the sidebar</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-primary" />
+            Getting Started
+          </CardTitle>
+          <CardDescription>Here are some things you can do</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+              <GraduationCap className="h-8 w-8 text-blue-600 mb-2" />
+              <h4 className="font-semibold">Students</h4>
+              <p className="text-sm text-muted-foreground">View student information</p>
+            </div>
+            <div className="p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+              <BookOpen className="h-8 w-8 text-green-600 mb-2" />
+              <h4 className="font-semibold">Classes</h4>
+              <p className="text-sm text-muted-foreground">Manage class schedules</p>
+            </div>
+            <div className="p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+              <DollarSign className="h-8 w-8 text-yellow-600 mb-2" />
+              <h4 className="font-semibold">Finance</h4>
+              <p className="text-sm text-muted-foreground">Track fees and payments</p>
+            </div>
+            <div className="p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+              <BarChart3 className="h-8 w-8 text-purple-600 mb-2" />
+              <h4 className="font-semibold">Reports</h4>
+              <p className="text-sm text-muted-foreground">View analytics</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -193,8 +271,8 @@ function AdminDashboard() {
           <CardContent>
             <p className="text-3xl font-bold text-slate-900">{stats?.attendanceRate ?? 0}%</p>
             <p className={`text-xs mt-1 flex items-center font-medium w-fit px-1.5 py-0.5 rounded-full ${(stats?.attendanceWeeklyChange ?? 0) >= 0
-                ? 'text-emerald-600 bg-emerald-50'
-                : 'text-red-600 bg-red-50'
+              ? 'text-emerald-600 bg-emerald-50'
+              : 'text-red-600 bg-red-50'
               }`}>
               {(stats?.attendanceWeeklyChange ?? 0) >= 0 ? (
                 <TrendingUp className="h-3 w-3 mr-1" />

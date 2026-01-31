@@ -122,43 +122,44 @@ import { eq, and, or, desc, sql, sum, lt, ne, isNull, isNotNull, inArray } from 
 
 export interface IStorage {
   // Users & Auth
-  getUser(id: number): Promise<User | undefined>;
+  getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByIdentifier(identifier: string): Promise<User | undefined>;
   getUserByGoogleId(googleId: string): Promise<User | undefined>;
 
   createUser(user: InsertUser): Promise<User>;
-  updateUserPassword(id: number, password: string): Promise<void>;
+  updateUserPassword(id: string, password: string): Promise<void>;
 
   // Students
-  getStudents(classId?: number, status?: "pending" | "approved" | "rejected"): Promise<(Student & { user: User, class: Class | null })[]>;
-  getStudent(id: number): Promise<(Student & { user: User }) | undefined>;
-  getStudentByUserId(userId: number): Promise<Student | undefined>;
+  getStudents(classId?: string, status?: "pending" | "approved" | "rejected"): Promise<(Student & { user: User, class: Class | null })[]>;
+  getStudent(id: string): Promise<(Student & { user: User }) | undefined>;
+  getStudentByUserId(userId: string): Promise<Student | undefined>;
   createStudent(student: InsertStudent): Promise<Student>;
-  updateStudentStatus(id: number, status: "approved" | "rejected"): Promise<void>;
-  bulkUpdateStudentStatus(ids: number[], status: "approved" | "rejected"): Promise<void>;
-  bulkDeleteStudents(ids: number[]): Promise<void>;
+  updateStudentStatus(id: string, status: "approved" | "rejected"): Promise<void>;
+  bulkUpdateStudentStatus(ids: string[], status: "approved" | "rejected"): Promise<void>;
+  bulkDeleteStudents(ids: string[]): Promise<void>;
 
   // Teachers
   getTeachers(): Promise<(Teacher & { user: User })[]>;
-  getTeacher(id: number): Promise<Teacher | undefined>;
-  getTeacherByUserId(userId: number): Promise<Teacher | undefined>;
+  getTeacher(id: string): Promise<Teacher | undefined>;
+  getTeacherByUserId(userId: string): Promise<Teacher | undefined>;
   createTeacher(teacher: InsertTeacher): Promise<Teacher>;
 
   // Classes
   getClasses(): Promise<(Class & { classTeacher: Teacher | null })[]>;
+  getSubjects(): Promise<Subject[]>;
   createClass(cls: InsertClass): Promise<Class>;
 
   // Attendance
   markAttendance(records: InsertAttendance[]): Promise<void>;
-  getAttendance(classId?: number, date?: string, studentId?: number): Promise<Attendance[]>;
+  getAttendance(classId?: string, date?: string, studentId?: string): Promise<Attendance[]>;
 
   // Stats
   getAdminStats(): Promise<{ totalStudents: number; totalTeachers: number; totalClasses: number }>;
   getAttendanceStats(): Promise<{ attendanceRate: number; attendanceWeeklyChange: number; totalRecords: number }>;
 
   // Fees
-  getFees(studentId?: number): Promise<any[]>;
+  getFees(studentId?: string): Promise<any[]>;
   createFee(fee: any): Promise<any>;
   bulkCreateFees(feesData: any[]): Promise<any[]>;
   updateFeeStatus(id: number, status: 'paid' | 'pending' | 'overdue'): Promise<any>;
@@ -168,26 +169,26 @@ export interface IStorage {
   getOverdueFeesWithoutPenalty(): Promise<any[]>;
 
   // Exams
-  getExams(classId?: number): Promise<any[]>;
+  getExams(classId?: string): Promise<any[]>;
   createExam(exam: any): Promise<any>;
 
   // Marks
-  getMarks(examId?: number, studentId?: number): Promise<any[]>;
+  getMarks(examId?: string, studentId?: string): Promise<any[]>;
   createMark(mark: any): Promise<any>;
   // Phase 3: Payments & Expenses
   // Payments
   createPayment(payment: InsertPayment): Promise<Payment>;
   getPayment(id: number): Promise<Payment | undefined>;
-  getPaymentsByStudent(studentId: number): Promise<Payment[]>;
+  getPaymentsByStudent(studentId: string): Promise<Payment[]>;
   createPaymentAllocation(allocation: InsertPaymentAllocation): Promise<PaymentAllocation>;
 
   // Scholarships
   createScholarshipType(type: InsertScholarshipType): Promise<ScholarshipType>;
   getScholarshipTypes(): Promise<ScholarshipType[]>;
   createScholarshipApplication(app: InsertScholarshipApplication): Promise<ScholarshipApplication>;
-  getScholarshipApplications(studentId?: number): Promise<ScholarshipApplication[]>;
+  getScholarshipApplications(studentId?: string): Promise<ScholarshipApplication[]>;
   createStudentScholarship(scholarship: InsertStudentScholarship): Promise<StudentScholarship>;
-  getStudentScholarships(studentId?: number): Promise<StudentScholarship[]>;
+  getStudentScholarships(studentId?: string): Promise<StudentScholarship[]>;
 
   // Expenses
   createExpenseCategory(category: InsertExpenseCategory): Promise<ExpenseCategory>;
@@ -196,14 +197,12 @@ export interface IStorage {
   getVendors(): Promise<Vendor[]>;
   createExpense(expense: InsertExpense): Promise<Expense>;
   getExpenses(departmentId?: number): Promise<Expense[]>;
-  createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
-  createPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem>;
-  getPurchaseOrders(departmentId?: number): Promise<PurchaseOrder[]>;
+
 
   // Legacy
   updateDailyAttendance(id: number, present: boolean): Promise<Attendance>;
   // Timetable
-  getTimetable(classId?: number): Promise<any[]>;
+  getTimetable(classId?: string): Promise<any[]>;
   createTimetableSlot(slot: any): Promise<any>;
   deleteTimetableSlot(id: number): Promise<void>;
 
@@ -213,38 +212,38 @@ export interface IStorage {
   toggleAcademicPeriod(id: number, isActive: boolean): Promise<void>;
 
   // Course History
-  getStudentCourseHistory(studentId: number): Promise<any[]>;
+  getStudentCourseHistory(studentId: string): Promise<any[]>;
   createCourseHistory(history: any): Promise<any>;
 
   // Financial Engine
-  getStudentAccount(studentId: number): Promise<any>;
+  getStudentAccount(studentId: string): Promise<any>;
   createStudentAccount(data: any): Promise<any>;
-  updateStudentBalance(accountId: number, amount: number, userId?: number): Promise<void>;
-  setFinancialHold(studentId: number, hasHold: boolean): Promise<void>;
-  getFeeStructures(academicPeriodId?: number): Promise<any[]>;
+  updateStudentBalance(accountId: string, amount: number, userId?: string): Promise<void>;
+  setFinancialHold(studentId: string, hasHold: boolean): Promise<void>;
+  getFeeStructures(academicPeriodId?: string): Promise<any[]>;
   createFeeStructure(data: any): Promise<any>;
-  getEnrollmentHistory(studentId: number): Promise<any[]>;
+  getEnrollmentHistory(studentId: string): Promise<any[]>;
   createEnrollment(data: any): Promise<any>;
   updateEnrollmentStatus(id: number, status: string): Promise<void>;
-  getFinancialTransactions(accountId: number): Promise<any[]>;
+  getFinancialTransactions(accountId: string): Promise<any[]>;
   createFinancialTransaction(data: any): Promise<any>;
-  getFinancialAidAwards(studentId: number): Promise<any[]>;
+  getFinancialAidAwards(studentId: string): Promise<any[]>;
   createFinancialAidAward(award: any): Promise<any>;
   updateAidStatus(id: number, status: string): Promise<void>;
 
   // Advanced Finance Module
-  createFinIncome(income: InsertFinIncome, userId: number): Promise<FinIncome>;
-  getFinIncomes(periodId?: number, type?: string, payerId?: number): Promise<FinIncome[]>;
+  createFinIncome(income: InsertFinIncome, userId: string): Promise<FinIncome>;
+  getFinIncomes(periodId?: string, type?: string, payerId?: string): Promise<FinIncome[]>;
   createFinExpense(expense: InsertFinExpense): Promise<FinExpense>;
-  getFinExpenses(periodId?: number, category?: string, userId?: number): Promise<FinExpense[]>;
+  getFinExpenses(periodId?: number, category?: string, userId?: string): Promise<FinExpense[]>;
   createFinAsset(asset: InsertFinAsset): Promise<FinAsset>;
   getFinAssets(type?: string): Promise<FinAsset[]>;
   createFinBudget(budget: InsertFinBudget): Promise<FinBudget>;
   getFinBudgets(periodId?: number): Promise<FinBudget[]>;
   createFinCompliance(compliance: InsertFinCompliance): Promise<FinCompliance>;
   getFinComplianceItems(type?: string): Promise<FinCompliance[]>;
-  logFinAudit(action: string, entityType: string, entityId: number, userId: number, changes?: { old?: any, new?: any }): Promise<void>;
-  calculateStudentBill(studentId: number): Promise<{ totalDue: number; breakdown: any }>;
+  logFinAudit(action: string, entityType: string, entityId: number, userId: string, changes?: { old?: any, new?: any }): Promise<void>;
+  calculateStudentBill(studentId: string): Promise<{ totalDue: number; breakdown: any }>;
 
   // LMS Module
   getCourseCategories(): Promise<any[]>;
@@ -264,7 +263,7 @@ export interface IStorage {
   getLmsAssignment(id: number): Promise<LmsAssignment | undefined>;
   createLmsSubmission(data: InsertLmsSubmission): Promise<LmsSubmission>;
   getLmsSubmissions(assignmentId: number): Promise<LmsSubmission[]>;
-  isEnrolled(userId: number, courseId: number): Promise<boolean>;
+  isEnrolled(userId: string, courseId: number): Promise<boolean>;
 
   // HR & Admissions
   createJobPosting(data: InsertJobPosting): Promise<JobPosting>;
@@ -292,14 +291,14 @@ export interface IStorage {
   getFiscalPeriods(year?: number): Promise<FiscalPeriod[]>;
   getCurrentFiscalPeriod(): Promise<FiscalPeriod | undefined>;
   createFiscalPeriod(data: InsertFiscalPeriod): Promise<FiscalPeriod>;
-  closeFiscalPeriod(id: number, userId: number): Promise<void>;
+  closeFiscalPeriod(id: number, userId: string): Promise<void>;
 
   // Journal Entries
   createJournalEntry(entry: Omit<InsertGlJournalEntry, 'journalNumber'> & { journalNumber?: string }, transactions: Omit<InsertGlTransaction, 'journalEntryId'>[]): Promise<GlJournalEntry>;
   getJournalEntries(periodId?: number, status?: string): Promise<(GlJournalEntry & { transactions: GlTransaction[] })[]>;
   getJournalEntry(id: number): Promise<(GlJournalEntry & { transactions: GlTransaction[] }) | undefined>;
-  postJournalEntry(id: number, userId: number): Promise<void>;
-  reverseJournalEntry(id: number, userId: number, reason: string): Promise<GlJournalEntry>;
+  postJournalEntry(id: number, userId: string): Promise<void>;
+  reverseJournalEntry(id: number, userId: string, reason: string): Promise<GlJournalEntry>;
 
   // GL Transactions & Reports
   getAccountBalance(accountId: number, fundId?: number, asOfDate?: string): Promise<number>;
@@ -312,7 +311,7 @@ export interface IStorage {
   getReconciliation(id: number): Promise<any>;
   createReconciliation(data: InsertGlReconciliation): Promise<GlReconciliation>;
   updateReconciliation(id: number, data: Partial<InsertGlReconciliation>): Promise<GlReconciliation>;
-  completeReconciliation(id: number, userId: number): Promise<GlReconciliation>;
+  completeReconciliation(id: number, userId: string): Promise<GlReconciliation>;
   getReconciliationItems(reconciliationId: number): Promise<any[]>;
   markTransactionCleared(reconciliationId: number, transactionId: number, isCleared: boolean, clearedDate?: string): Promise<GlReconciliationItem>;
   getUnclearedTransactions(accountId: number, asOfDate: string): Promise<any[]>;
@@ -323,31 +322,31 @@ export interface IStorage {
   // ACCOUNTS RECEIVABLE (AR) MODULE
   // ========================================
   createStudentBill(bill: InsertArStudentBill, lineItems: InsertArBillLineItem[]): Promise<ArStudentBill>;
-  getStudentBills(studentId?: number, status?: string): Promise<ArStudentBill[]>;
+  getStudentBills(studentId?: string, status?: string): Promise<ArStudentBill[]>;
   getStudentBill(id: number): Promise<(ArStudentBill & { lineItems: ArBillLineItem[], student: Student }) | undefined>;
   postStudentBillToGL(billId: number): Promise<void>;
 
   createArPayment(payment: InsertArPayment, allocations: { billId: number, amount: number }[]): Promise<ArPayment>;
-  getArPayments(studentId?: number): Promise<ArPayment[]>;
+  getArPayments(studentId?: string): Promise<ArPayment[]>;
   postArPaymentToGL(paymentId: number): Promise<void>;
 
   // AR Refunds
   createRefundRequest(refund: any): Promise<any>;
-  getRefundRequests(status?: string, studentId?: number): Promise<any[]>;
-  approveRefund(id: number, userId: number): Promise<any>;
-  rejectRefund(id: number, userId: number, reason: string): Promise<any>;
+  getRefundRequests(status?: string, studentId?: string): Promise<any[]>;
+  approveRefund(id: number, userId: string): Promise<any>;
+  rejectRefund(id: number, userId: string, reason: string): Promise<any>;
   processRefund(id: number, checkNumber: string): Promise<any>;
   postRefundToGL(id: number): Promise<void>;
 
   // AR Dunning
   getOverdueBills(daysOverdue?: number): Promise<any[]>;
-  sendDunningNotice(studentId: number, billId: number, level: number): Promise<any>;
-  getDunningHistory(studentId?: number, billId?: number): Promise<any[]>;
+  sendDunningNotice(studentId: string, billId: number, level: number): Promise<any>;
+  getDunningHistory(studentId?: string, billId?: number): Promise<any[]>;
 
   // AR Auto-Billing
   createAutoBillRule(rule: InsertArAutoBillRule): Promise<ArAutoBillRule>;
   getAutoBillRules(periodId?: number): Promise<ArAutoBillRule[]>;
-  generateBillsFromEnrollment(studentId: number, enrollmentId: number): Promise<ArStudentBill[]>;
+  generateBillsFromEnrollment(studentId: string, enrollmentId: number): Promise<ArStudentBill[]>;
 
   getAgingReport(): Promise<any[]>;
 
@@ -359,15 +358,15 @@ export interface IStorage {
 
   createApInvoice(invoice: InsertApInvoice, lineItems: any[]): Promise<ApInvoice>;
   getApInvoices(vendorId?: number, status?: string): Promise<ApInvoice[]>;
-  approveApInvoice(id: number, userId: number): Promise<void>;
+  approveApInvoice(id: number, userId: string): Promise<void>;
   postApInvoiceToGL(invoiceId: number): Promise<void>;
 
   // AP Expense Reports
   createExpenseReport(report: any, items: any[]): Promise<any>;
-  getExpenseReports(userId?: number, status?: string): Promise<any[]>;
+  getExpenseReports(userId?: string, status?: string): Promise<any[]>;
   submitExpenseReport(id: number): Promise<void>;
-  approveExpenseReport(id: number, approverId: number): Promise<void>;
-  rejectExpenseReport(id: number, approverId: number, reason: string): Promise<void>;
+  approveExpenseReport(id: number, approverId: string): Promise<void>;
+  rejectExpenseReport(id: number, approverId: string, reason: string): Promise<void>;
   postExpenseReportToGL(id: number): Promise<void>;
 
   // AP 1099 Reporting
@@ -395,13 +394,13 @@ export interface IStorage {
   postPayrollToGL(runId: number): Promise<void>;
 
   // Timesheets
-  getTimesheets(employeeId?: number, startDate?: string, endDate?: string): Promise<Timesheet[]>;
+  getTimesheets(employeeId?: string, startDate?: string, endDate?: string): Promise<Timesheet[]>;
   createTimesheet(data: InsertTimesheet): Promise<Timesheet>;
-  approveTimesheet(id: number, approverId: number): Promise<void>;
+  approveTimesheet(id: number, approverId: string): Promise<void>;
 
   // W-2/Tax Records
   generateW2Records(taxYear: number): Promise<W2Record[]>;
-  getW2Records(taxYear: number, employeeId?: number): Promise<W2Record[]>;
+  getW2Records(taxYear: number, employeeId?: string): Promise<W2Record[]>;
 
   // ========================================
   // PROGRAMS MODULE
@@ -464,7 +463,7 @@ export interface IStorage {
   postDisposalToGL(disposalId: number): Promise<void>;
 
   // Payment Plans
-  getPaymentPlans(studentId?: number): Promise<PaymentPlan[]>;
+  getPaymentPlans(studentId?: string): Promise<PaymentPlan[]>;
   getPaymentPlan(id: number): Promise<(PaymentPlan & { installments: PaymentPlanInstallment[] }) | undefined>;
   createPaymentPlan(plan: InsertPaymentPlan): Promise<PaymentPlan>;
   createPaymentPlanInstallment(installment: InsertPaymentPlanInstallment): Promise<PaymentPlanInstallment>;
@@ -505,7 +504,7 @@ export interface IStorage {
   createFeeStructureV2(structure: InsertFeeStructureV2): Promise<FeeStructureV2>;
 
   // Student Fees (New Ledger)
-  getStudentFees(studentId: number): Promise<StudentFee[]>;
+  getStudentFees(studentId: string): Promise<StudentFee[]>;
   createStudentFee(fee: InsertStudentFee): Promise<StudentFee>;
 }
 
@@ -529,7 +528,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Course History
-  async getStudentCourseHistory(studentId: number): Promise<any[]> {
+  async getStudentCourseHistory(studentId: string): Promise<any[]> {
     return await db
       .select({
         history: courseHistory,
@@ -578,14 +577,14 @@ export class DatabaseStorage implements IStorage {
     return newUser;
   }
 
-  async updateUserPassword(id: number, password: string): Promise<void> {
+  async updateUserPassword(id: string, password: string): Promise<void> {
     await db.update(users)
       .set({ password, mustChangePassword: false }) // Reset the flag
       .where(eq(users.id, id));
   }
 
   // Students
-  async getStudents(classId?: number, status?: "pending" | "approved" | "rejected"): Promise<(Student & { user: User, class: Class | null })[]> {
+  async getStudents(classId?: string, status?: "pending" | "approved" | "rejected"): Promise<(Student & { user: User, class: Class | null })[]> {
     const query = db
       .select({
         student: students,
@@ -608,19 +607,19 @@ export class DatabaseStorage implements IStorage {
     return rows.map(row => ({ ...row.student, user: row.user, class: row.class }));
   }
 
-  async updateStudentStatus(id: number, status: "approved" | "rejected"): Promise<void> {
+  async updateStudentStatus(id: string, status: "approved" | "rejected"): Promise<void> {
     await db.update(students).set({ status }).where(eq(students.id, id));
   }
 
-  async bulkUpdateStudentStatus(ids: number[], status: "approved" | "rejected"): Promise<void> {
+  async bulkUpdateStudentStatus(ids: string[], status: "approved" | "rejected"): Promise<void> {
     await db.update(students).set({ status }).where(inArray(students.id, ids));
   }
 
-  async bulkDeleteStudents(ids: number[]): Promise<void> {
+  async bulkDeleteStudents(ids: string[]): Promise<void> {
     await db.update(students).set({ deletedAt: new Date() }).where(inArray(students.id, ids));
   }
 
-  async getStudent(id: number): Promise<(Student & { user: User }) | undefined> {
+  async getStudent(id: string): Promise<(Student & { user: User }) | undefined> {
     const [row] = await db
       .select({
         student: students,
@@ -634,7 +633,7 @@ export class DatabaseStorage implements IStorage {
     return { ...row.student, user: row.user };
   }
 
-  async getStudentByUserId(userId: number): Promise<Student | undefined> {
+  async getStudentByUserId(userId: string): Promise<Student | undefined> {
     const [student] = await db.select().from(students).where(eq(students.userId, userId));
     return student;
   }
@@ -657,12 +656,12 @@ export class DatabaseStorage implements IStorage {
     return rows.map(row => ({ ...row.teacher, user: row.user }));
   }
 
-  async getTeacher(id: number): Promise<Teacher | undefined> {
+  async getTeacher(id: string): Promise<Teacher | undefined> {
     const [teacher] = await db.select().from(teachers).where(eq(teachers.id, id));
     return teacher;
   }
 
-  async getTeacherByUserId(userId: number): Promise<Teacher | undefined> {
+  async getTeacherByUserId(userId: string): Promise<Teacher | undefined> {
     const [teacher] = await db.select().from(teachers).where(eq(teachers.userId, userId));
     return teacher;
   }
@@ -685,6 +684,10 @@ export class DatabaseStorage implements IStorage {
     return rows.map(row => ({ ...row.class, classTeacher: row.teacher }));
   }
 
+  async getSubjects(): Promise<Subject[]> {
+    return await db.select().from(subjects).orderBy(subjects.name);
+  }
+
   async createClass(cls: InsertClass): Promise<Class> {
     const [newClass] = await db.insert(classes).values(cls).returning();
     return newClass;
@@ -696,7 +699,7 @@ export class DatabaseStorage implements IStorage {
     await db.insert(attendance).values(records);
   }
 
-  async getAttendance(classId?: number, date?: string, studentId?: number): Promise<Attendance[]> {
+  async getAttendance(classId?: string, date?: string, studentId?: string): Promise<Attendance[]> {
     let conditions = [];
     if (date) conditions.push(eq(attendance.date, date));
     if (studentId) conditions.push(eq(attendance.studentId, studentId));
@@ -799,7 +802,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Fees
-  async getFees(studentId?: number): Promise<any[]> {
+  async getFees(studentId?: string): Promise<any[]> {
     const query = db
       .select({
         fee: fees,
@@ -890,7 +893,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Exams
-  async getExams(classId?: number): Promise<any[]> {
+  async getExams(classId?: string): Promise<any[]> {
     const query = db.select().from(exams);
     if (classId) {
       query.where(eq(exams.classId, classId));
@@ -904,7 +907,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Marks
-  async getMarks(examId?: number, studentId?: number): Promise<any[]> {
+  async getMarks(examId?: string, studentId?: string): Promise<any[]> {
     const conditions = [];
     if (examId) conditions.push(eq(marks.examId, examId));
     if (studentId) conditions.push(eq(marks.studentId, studentId));
@@ -928,7 +931,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Timetable
-  async getTimetable(classId?: number): Promise<any[]> {
+  async getTimetable(classId?: string): Promise<any[]> {
     const query = db.select().from(timetable);
     if (classId) {
       query.where(eq(timetable.classId, classId));
@@ -949,7 +952,7 @@ export class DatabaseStorage implements IStorage {
   // FINANCIAL ENGINE METHODS
   // ========================================
 
-  async getStudentAccount(studentId: number): Promise<any> {
+  async getStudentAccount(studentId: string): Promise<any> {
     const [account] = await db.select().from(studentAccounts).where(eq(studentAccounts.studentId, studentId));
     return account;
   }
@@ -965,7 +968,7 @@ export class DatabaseStorage implements IStorage {
    * @param amount - The new balance amount
    * @param userId - The ID of the user performing the update (for audit trail)
    */
-  async updateStudentBalance(accountId: number, amount: number, userId?: number): Promise<void> {
+  async updateStudentBalance(accountId: string, amount: number, userId?: string): Promise<void> {
     // Fetch old account state for audit logging
     const [oldAccount] = await db.select()
       .from(studentAccounts)
@@ -987,13 +990,13 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async setFinancialHold(studentId: number, hasHold: boolean): Promise<void> {
+  async setFinancialHold(studentId: string, hasHold: boolean): Promise<void> {
     await db.update(studentAccounts)
       .set({ hasFinancialHold: hasHold })
       .where(eq(studentAccounts.studentId, studentId));
   }
 
-  async getFeeStructures(academicPeriodId?: number): Promise<any[]> {
+  async getFeeStructures(academicPeriodId?: string): Promise<any[]> {
     const query = db.select().from(feeStructures);
     if (academicPeriodId) {
       query.where(eq(feeStructures.academicPeriodId, academicPeriodId));
@@ -1006,7 +1009,7 @@ export class DatabaseStorage implements IStorage {
     return structure;
   }
 
-  async getEnrollmentHistory(studentId: number): Promise<any[]> {
+  async getEnrollmentHistory(studentId: string): Promise<any[]> {
     return await db.select().from(enrollmentHistory).where(eq(enrollmentHistory.studentId, studentId));
   }
 
@@ -1021,7 +1024,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(enrollmentHistory.id, id));
   }
 
-  async getFinancialTransactions(accountId: number): Promise<any[]> {
+  async getFinancialTransactions(accountId: string): Promise<any[]> {
     return await db.select().from(financialTransactions)
       .where(eq(financialTransactions.accountId, accountId))
       .orderBy(desc(financialTransactions.createdAt));
@@ -1035,7 +1038,7 @@ export class DatabaseStorage implements IStorage {
 
   // --- Advanced Finance Module Implementations ---
 
-  async createFinIncome(income: InsertFinIncome, userId: number): Promise<FinIncome> {
+  async createFinIncome(income: InsertFinIncome, userId: string): Promise<FinIncome> {
     const [newIncome] = await db.insert(finIncome).values(income).returning();
     // Auto-log audit (non-blocking - don't fail the request if audit fails)
     if (newIncome && userId) {
@@ -1049,7 +1052,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Payment Plans
-  async getPaymentPlans(studentId?: number): Promise<PaymentPlan[]> {
+  async getPaymentPlans(studentId?: string): Promise<PaymentPlan[]> {
     const query = db.select().from(paymentPlans);
     if (studentId) {
       query.where(eq(paymentPlans.studentId, studentId));
@@ -1080,7 +1083,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Financial Aid
-  async getFinancialAidAwards(studentId?: number): Promise<FinAidAward[]> {
+  async getFinancialAidAwards(studentId?: string): Promise<FinAidAward[]> {
     const query = db.select().from(financialAidAwards);
     if (studentId) {
       query.where(eq(financialAidAwards.studentId, studentId));
@@ -1167,7 +1170,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Student Fees (New Ledger)
-  async getStudentFees(studentId: number): Promise<StudentFee[]> {
+  async getStudentFees(studentId: string): Promise<StudentFee[]> {
     return await db.select().from(studentFees).where(eq(studentFees.studentId, studentId));
   }
   async createStudentFee(fee: InsertStudentFee): Promise<StudentFee> {
@@ -1175,7 +1178,7 @@ export class DatabaseStorage implements IStorage {
     return newFee;
   }
 
-  async getFinIncomes(periodId?: number, type?: string, payerId?: number): Promise<FinIncome[]> {
+  async getFinIncomes(periodId?: string, type?: string, payerId?: string): Promise<FinIncome[]> {
     let conditions = [];
     if (periodId) conditions.push(eq(finIncome.academicPeriodId, periodId));
     if (type) conditions.push(eq(finIncome.sourceType, type as any));
@@ -1187,7 +1190,7 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(finIncome).orderBy(desc(finIncome.date));
   }
   // Legacy fees from old system
-  async getLegacyStudentFees(studentId: number): Promise<Fee[]> {
+  async getLegacyStudentFees(studentId: string): Promise<Fee[]> {
     return await db.select().from(fees).where(eq(fees.studentId, studentId)).orderBy(desc(fees.dueDate));
   }
 
@@ -1196,7 +1199,7 @@ export class DatabaseStorage implements IStorage {
     return newExpense;
   }
 
-  async getFinExpenses(periodId?: number, category?: string): Promise<FinExpense[]> {
+  async getFinExpenses(periodId?: number, category?: string, userId?: string): Promise<FinExpense[]> {
     return await db.select().from(finExpenses);
   }
 
@@ -1230,7 +1233,7 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(finCompliance);
   }
 
-  async logFinAudit(action: string, entityType: string, entityId: number, userId: number, changes?: { old?: any, new?: any }): Promise<void> {
+  async logFinAudit(action: string, entityType: string, entityId: number, userId: string, changes?: { old?: any, new?: any }): Promise<void> {
     await db.insert(finAuditLogs).values({
       action: action as any,
       entityType,
@@ -1256,7 +1259,7 @@ export class DatabaseStorage implements IStorage {
     return payment;
   }
 
-  async getPaymentsByStudent(studentId: number): Promise<Payment[]> {
+  async getPaymentsByStudent(studentId: string): Promise<Payment[]> {
     return await db.select().from(payments)
       .where(eq(payments.studentId, studentId))
       .orderBy(desc(payments.paymentDate));
@@ -1282,7 +1285,7 @@ export class DatabaseStorage implements IStorage {
     return newApp;
   }
 
-  async getScholarshipApplications(studentId?: number): Promise<ScholarshipApplication[]> {
+  async getScholarshipApplications(studentId?: string): Promise<ScholarshipApplication[]> {
     const query = db.select().from(scholarshipApplications);
     if (studentId) {
       query.where(eq(scholarshipApplications.studentId, studentId));
@@ -1295,7 +1298,7 @@ export class DatabaseStorage implements IStorage {
     return newScholarship;
   }
 
-  async getStudentScholarships(studentId?: number): Promise<StudentScholarship[]> {
+  async getStudentScholarships(studentId?: string): Promise<StudentScholarship[]> {
     const query = db.select().from(studentScholarships);
     if (studentId) {
       query.where(eq(studentScholarships.studentId, studentId));
@@ -1335,29 +1338,13 @@ export class DatabaseStorage implements IStorage {
     return await query.orderBy(desc(expenses.expenseDate));
   }
 
-  async createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder> {
-    const [newPo] = await db.insert(purchaseOrders).values(po).returning();
-    return newPo;
-  }
-
-  async createPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem> {
-    const [newItem] = await db.insert(purchaseOrderItems).values(item).returning();
-    return newItem;
-  }
-
-  async getPurchaseOrders(departmentId?: number): Promise<PurchaseOrder[]> {
-    const query = db.select().from(purchaseOrders);
-    if (departmentId) {
-      query.where(eq(purchaseOrders.departmentId, departmentId));
-    }
-    return await query.orderBy(desc(purchaseOrders.poDate));
-  }
+  // Purchase Order implementations moved to AP Module section (renamed to createPurchaseOrder and getPurchaseOrders)
 
   /**
    * CALCULATION ENGINE
    * Total_Bill = (Base_Tuition × Credits) + Σ(Course_Fees) + Σ(Term_Fees) - Σ(Waivers)
    */
-  async calculateStudentBill(studentId: number): Promise<{ totalDue: number; breakdown: any }> {
+  async calculateStudentBill(studentId: string): Promise<{ totalDue: number; breakdown: any }> {
     // 1. Get active academic period
     const [activePeriod] = await db.select().from(academicPeriods).where(eq(academicPeriods.isActive, true));
     if (!activePeriod) {
@@ -1518,7 +1505,7 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(lmsSubmissions).where(eq(lmsSubmissions.assignmentId, assignmentId));
   }
 
-  async isEnrolled(userId: number, courseId: number): Promise<boolean> {
+  async isEnrolled(userId: string, courseId: number): Promise<boolean> {
     // For now, allow all authenticated users access to courses
     // In a full implementation, this would check an lms_enrollments table
     // linking users to courses with student/instructor roles
@@ -1647,7 +1634,7 @@ export class DatabaseStorage implements IStorage {
     return period;
   }
 
-  async closeFiscalPeriod(id: number, userId: number): Promise<void> {
+  async closeFiscalPeriod(id: number, userId: string): Promise<void> {
     await db.update(fiscalPeriods)
       .set({ isClosed: true, closedAt: new Date(), closedBy: userId })
       .where(eq(fiscalPeriods.id, id));
@@ -1718,13 +1705,13 @@ export class DatabaseStorage implements IStorage {
     return { ...entry, transactions };
   }
 
-  async postJournalEntry(id: number, userId: number): Promise<void> {
+  async postJournalEntry(id: number, userId: string): Promise<void> {
     await db.update(glJournalEntries)
       .set({ status: 'posted', postedAt: new Date(), postedBy: userId })
       .where(eq(glJournalEntries.id, id));
   }
 
-  async reverseJournalEntry(id: number, userId: number, reason: string): Promise<GlJournalEntry> {
+  async reverseJournalEntry(id: number, userId: string, reason: string): Promise<GlJournalEntry> {
     const original = await this.getJournalEntry(id);
     if (!original) throw new Error('Journal entry not found');
 
@@ -1752,7 +1739,7 @@ export class DatabaseStorage implements IStorage {
 
     // Mark original as reversed
     await db.update(glJournalEntries)
-      .set({ status: 'reversed', reversedBy: reversingEntry.id })
+      .set({ status: 'reversed', reversedBy: parseInt(reversingEntry.id.toString()) }) // Assuming id is serial number
       .where(eq(glJournalEntries.id, id));
 
     return reversingEntry;
@@ -1939,7 +1926,7 @@ export class DatabaseStorage implements IStorage {
     return newBill;
   }
 
-  async getStudentBills(studentId?: number, status?: string): Promise<ArStudentBill[]> {
+  async getStudentBills(studentId?: string, status?: string): Promise<ArStudentBill[]> {
     let conditions = [];
     if (studentId) conditions.push(eq(arStudentBills.studentId, studentId));
     if (status) conditions.push(eq(arStudentBills.status, status as any));
@@ -1994,7 +1981,7 @@ export class DatabaseStorage implements IStorage {
       entryDate: bill.billDate,
       fiscalPeriodId: period.id,
       description: `Student Bill ${bill.billNumber} - ${(bill.student as any).user.name}`,
-      createdBy: bill.createdBy || 1,
+      createdBy: bill.createdBy!, // Assumes bill has createdBy
       referenceType: 'AR_Bill',
       referenceId: billId
     }, transactions);
@@ -2040,7 +2027,7 @@ export class DatabaseStorage implements IStorage {
     return newPayment;
   }
 
-  async getArPayments(studentId?: number): Promise<ArPayment[]> {
+  async getArPayments(studentId?: string): Promise<ArPayment[]> {
     if (studentId) {
       return await db.select().from(arPayments).where(eq(arPayments.studentId, studentId));
     }
@@ -2130,7 +2117,7 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async getRefundRequests(status?: string, studentId?: number): Promise<any[]> {
+  async getRefundRequests(status?: string, studentId?: string): Promise<any[]> {
     let conditions = [];
     if (status) conditions.push(eq(arRefunds.status, status as any));
     if (studentId) conditions.push(eq(arRefunds.studentId, studentId));
@@ -2150,7 +2137,7 @@ export class DatabaseStorage implements IStorage {
     return await query;
   }
 
-  async approveRefund(id: number, userId: number): Promise<any> {
+  async approveRefund(id: number, userId: string): Promise<any> {
     const [updated] = await db.update(arRefunds)
       .set({
         status: 'approved',
@@ -2162,7 +2149,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async rejectRefund(id: number, userId: number, reason: string): Promise<any> {
+  async rejectRefund(id: number, userId: string, reason: string): Promise<any> {
     const [updated] = await db.update(arRefunds)
       .set({
         status: 'rejected',
@@ -2264,7 +2251,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async sendDunningNotice(studentId: number, billId: number, level: number): Promise<any> {
+  async sendDunningNotice(studentId: string, billId: number, level: number): Promise<any> {
     const bill = await this.getStudentBill(billId);
     if (!bill) throw new Error("Bill not found");
 
@@ -2287,7 +2274,7 @@ export class DatabaseStorage implements IStorage {
     return notice;
   }
 
-  async getDunningHistory(studentId?: number, billId?: number): Promise<any[]> {
+  async getDunningHistory(studentId?: string, billId?: number): Promise<any[]> {
     let conditions = [];
     if (studentId) conditions.push(eq(arDunningHistory.studentId, studentId));
     if (billId) conditions.push(eq(arDunningHistory.billId, billId));
@@ -2315,7 +2302,7 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(arAutoBillRules);
   }
 
-  async generateBillsFromEnrollment(studentId: number, enrollmentId: number): Promise<ArStudentBill[]> {
+  async generateBillsFromEnrollment(studentId: string, enrollmentId: number): Promise<ArStudentBill[]> {
     // 1. Get enrollment details to find course
     const enrollment = await db.query.courseEnrollments.findFirst({
       where: eq(courseEnrollments.id, enrollmentId),
@@ -2338,13 +2325,16 @@ export class DatabaseStorage implements IStorage {
     if (rules.length === 0) return []; // No rules, no bill
 
     // 3. Create a new bill
-    const termId = 1; // Default to 1 for now
+    // Get active academic period
+    const [activePeriod] = await db.select().from(academicPeriods).where(eq(academicPeriods.isActive, true));
+    if (!activePeriod) throw new Error("No active academic period found");
+
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 30); // Due in 30 days
 
     const [bill] = await db.insert(arStudentBills).values({
       studentId,
-      academicPeriodId: termId,
+      academicPeriodId: activePeriod.id,
       billNumber: `BILL-${Date.now()}`,
       billDate: new Date().toISOString().split('T')[0],
       dueDate: dueDate.toISOString().split('T')[0],
@@ -2413,11 +2403,11 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async getExpenseReports(userId?: number, status?: string): Promise<any[]> {
+  async getExpenseReports(userId?: string, status?: string): Promise<any[]> {
     return await db.query.apExpenseReports.findMany({
       where: and(
         userId ? eq(apExpenseReports.employeeId, userId) : undefined,
-        status ? eq(apExpenseReports.status, status as 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'paid' | 'cancelled' | 'scheduled') : undefined
+        status ? eq(apExpenseReports.status, status as any) : undefined
       ),
       with: { items: true, employee: true },
       orderBy: desc(apExpenseReports.createdAt)
@@ -2430,7 +2420,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(apExpenseReports.id, id));
   }
 
-  async approveExpenseReport(id: number, approverId: number): Promise<void> {
+  async approveExpenseReport(id: number, approverId: string): Promise<void> {
     await db.update(apExpenseReports)
       .set({
         status: 'approved',
@@ -2439,7 +2429,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(apExpenseReports.id, id));
   }
 
-  async rejectExpenseReport(id: number, approverId: number, reason: string): Promise<void> {
+  async rejectExpenseReport(id: number, approverId: string, reason: string): Promise<void> {
     await db.update(apExpenseReports)
       .set({ status: 'rejected' }) // In real app, would store rejection reason in audit log
       .where(eq(apExpenseReports.id, id));
@@ -2551,7 +2541,7 @@ export class DatabaseStorage implements IStorage {
   }
   // AP PO Matching Implementation - Uses createPurchaseOrder from line ~1348
   // This version handles items - use for AP module
-  async createPurchaseOrderWithItems(po: any, items: any[]): Promise<PurchaseOrder> {
+  async createPurchaseOrder(po: any, items: any[]): Promise<PurchaseOrder> {
     const [newPO] = await db.insert(purchaseOrders).values(po).returning();
 
     for (const item of items) {
@@ -2565,7 +2555,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // AP version with vendor and status filters
-  async getApPurchaseOrders(vendorId?: number, status?: string): Promise<PurchaseOrder[]> {
+  async getPurchaseOrders(vendorId?: number, status?: string): Promise<PurchaseOrder[]> {
     const conditions = [];
     if (vendorId) conditions.push(eq(purchaseOrders.vendorId, vendorId));
     if (status) conditions.push(eq(purchaseOrders.status, status));
@@ -2625,7 +2615,7 @@ export class DatabaseStorage implements IStorage {
       : await db.select().from(apInvoices);
   }
 
-  async approveApInvoice(id: number, userId: number): Promise<void> {
+  async approveApInvoice(id: number, userId: string): Promise<void> {
     await db.update(apInvoices)
       .set({ status: 'approved', approvedBy: userId, approvedAt: new Date() })
       .where(eq(apInvoices.id, id));
@@ -2664,7 +2654,7 @@ export class DatabaseStorage implements IStorage {
       entryDate: invoice.invoiceDate,
       fiscalPeriodId: period.id,
       description: `AP Invoice ${invoice.invoiceNumber}`,
-      createdBy: invoice.createdBy || 1,
+      createdBy: invoice.createdBy!, // Assumes createdBy exists
       referenceType: 'AP_Invoice',
       referenceId: invoiceId
     }, transactions);
@@ -2691,7 +2681,7 @@ export class DatabaseStorage implements IStorage {
       entryDate: payment.paymentDate,
       fiscalPeriodId: period.id,
       description: `AP Payment ${payment.paymentNumber}`,
-      createdBy: payment.createdBy || 1,
+      createdBy: payment.createdBy!, // Assumes createdBy exists
       referenceType: 'AP_Payment',
       referenceId: paymentId
     }, [
@@ -2759,7 +2749,7 @@ export class DatabaseStorage implements IStorage {
       entryDate: run.payDate,
       fiscalPeriodId: period.id,
       description: `Payroll ${run.runNumber}`,
-      createdBy: run.processedBy || 1,
+      createdBy: run.processedBy!,
       referenceType: 'Payroll',
       referenceId: runId
     }, [
@@ -2847,7 +2837,7 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async completeReconciliation(id: number, userId: number): Promise<GlReconciliation> {
+  async completeReconciliation(id: number, userId: string): Promise<GlReconciliation> {
     const [updated] = await db.update(glReconciliations)
       .set({
         status: 'completed',
@@ -3026,7 +3016,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Timesheets
-  async getTimesheets(employeeId?: number, startDate?: string, endDate?: string): Promise<Timesheet[]> {
+  async getTimesheets(employeeId?: string, startDate?: string, endDate?: string): Promise<Timesheet[]> {
     const conditions = [];
     if (employeeId) conditions.push(eq(timesheets.employeeId, employeeId));
     if (startDate) conditions.push(sql`${timesheets.workDate} >= ${startDate}`);
@@ -3043,7 +3033,7 @@ export class DatabaseStorage implements IStorage {
     return timesheet;
   }
 
-  async approveTimesheet(id: number, approverId: number): Promise<void> {
+  async approveTimesheet(id: number, approverId: string): Promise<void> {
     await db.update(timesheets).set({
       approvedBy: approverId,
       approvedAt: new Date()
@@ -3106,7 +3096,7 @@ export class DatabaseStorage implements IStorage {
     return w2s;
   }
 
-  async getW2Records(taxYear: number, employeeId?: number): Promise<W2Record[]> {
+  async getW2Records(taxYear: number, employeeId?: string): Promise<W2Record[]> {
     const conditions = [eq(w2Records.taxYear, taxYear)];
     if (employeeId) conditions.push(eq(w2Records.employeeId, employeeId));
     return await db.select().from(w2Records).where(and(...conditions));
@@ -3248,7 +3238,7 @@ export class DatabaseStorage implements IStorage {
       status: 'draft',
       totalDebit: donation.amount,
       totalCredit: donation.amount,
-      createdBy: 1, // System user
+      createdBy: (await this.getUserByUsername('admin'))?.id!, // System user
       referenceType: 'Donation',
       referenceId: donationId
     }, [
@@ -3478,7 +3468,7 @@ export class DatabaseStorage implements IStorage {
       status: 'draft',
       totalDebit,
       totalCredit,
-      createdBy: disposal.disposedBy || 1,
+      createdBy: disposal.disposedBy!,
       referenceType: 'AssetDisposal',
       referenceId: disposalId
     }, transactions);
