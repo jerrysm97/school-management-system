@@ -21,7 +21,10 @@ import rateLimit from "express-rate-limit";
 import { OAuth2Client } from "google-auth-library";
 
 const scryptAsync = promisify(scrypt);
-const JWT_SECRET = process.env.SESSION_SECRET || "super_secret_jwt_key_123";
+const JWT_SECRET = process.env.SESSION_SECRET;
+if (!JWT_SECRET) {
+  throw new Error("FATAL: SESSION_SECRET environment variable is not set. Server cannot start.");
+}
 
 // ========================================
 // RATE LIMITERS
@@ -269,9 +272,12 @@ export async function registerRoutes(
 
       const { sub: googleId, email, name, picture: avatarUrl } = payload;
 
-      // Optional: Restricted domain check
+      // Mandatory: Restricted domain check
       const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN;
-      if (allowedDomain && !email.endsWith(`@${allowedDomain}`)) {
+      if (!allowedDomain) {
+        return res.status(500).json({ message: "Server configuration error: ALLOWED_EMAIL_DOMAIN not set" });
+      }
+      if (!email.endsWith(`@${allowedDomain}`)) {
         return res.status(403).json({ message: `Access restricted to @${allowedDomain} accounts` });
       }
 
@@ -935,8 +941,7 @@ export async function registerRoutes(
     res.json(account);
   });
 
-  app.patch("/api/students/:id/account/hold", authenticateToken, async (req, res) => {
-    if ((req as any).user.role !== 'admin') return res.sendStatus(403);
+  app.patch("/api/students/:id/account/hold", authenticateToken, requirePermission('fees', 'write'), async (req, res) => {
     const studentId = req.params.id;
     const { hasHold } = req.body;
     await storage.setFinancialHold(studentId, hasHold);

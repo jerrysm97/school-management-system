@@ -19,12 +19,12 @@ export function normalizeRole(role: string): Role {
 // Note: 'admin' is treated as 'main_admin' (level 0)
 export const ROLE_HIERARCHY: Record<Role, number> = {
     main_admin: 0,
-    admin: 0, // Legacy alias
-    principal: 1,
-    accountant: 2,
-    teacher: 2,
-    student: 3,
-    parent: 4,
+    admin: 1, // Subordinate to main_admin
+    principal: 2,
+    accountant: 3,
+    teacher: 3,
+    student: 4,
+    parent: 5,
 };
 
 // Module permissions
@@ -64,22 +64,22 @@ export const ROLE_PERMISSIONS: Record<Role, Partial<Record<Module, Permission[]>
         system_config: ['read', 'write', 'delete', 'approve', 'admin'],
         audit_logs: ['read', 'write', 'delete', 'approve', 'admin'],
     },
-    // 'admin' is a legacy alias for 'main_admin' - same permissions
+    // 'admin' has reduced privileges compared to 'main_admin'
     admin: {
-        dashboard: ['read', 'write', 'delete', 'approve', 'admin'],
-        users: ['read', 'write', 'delete', 'approve', 'admin'],
-        students: ['read', 'write', 'delete', 'approve', 'admin'],
-        teachers: ['read', 'write', 'delete', 'approve', 'admin'],
-        classes: ['read', 'write', 'delete', 'approve', 'admin'],
-        attendance: ['read', 'write', 'delete', 'approve', 'admin'],
-        timetable: ['read', 'write', 'delete', 'approve', 'admin'],
-        exams: ['read', 'write', 'delete', 'approve', 'admin'],
-        fees: ['read', 'write', 'delete', 'approve', 'admin'],
-        financial_engine: ['read', 'write', 'delete', 'approve', 'admin'],
-        settings: ['read', 'write', 'delete', 'approve', 'admin'],
-        reports: ['read', 'write', 'delete', 'approve', 'admin'],
-        system_config: ['read', 'write', 'delete', 'approve', 'admin'],
-        audit_logs: ['read', 'write', 'delete', 'approve', 'admin'],
+        dashboard: ['read', 'write', 'approve'],
+        users: ['read', 'write', 'approve'],
+        students: ['read', 'write', 'delete', 'approve'],
+        teachers: ['read', 'write', 'delete', 'approve'],
+        classes: ['read', 'write', 'delete', 'approve'],
+        attendance: ['read', 'write', 'approve'],
+        timetable: ['read', 'write', 'approve'],
+        exams: ['read', 'write', 'delete', 'approve'],
+        fees: ['read', 'write', 'delete', 'approve'],
+        financial_engine: ['read', 'write', 'approve'],
+        settings: ['read', 'write'],
+        reports: ['read', 'write'],
+        // NO system_config access
+        audit_logs: ['read'], // Read-only for compliance visibility
     },
     principal: {
         dashboard: ['read', 'write'],

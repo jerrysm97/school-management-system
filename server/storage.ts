@@ -683,13 +683,13 @@ export class DatabaseStorage implements IStorage {
 
     const rows = await query.execute();
     return rows.map(row => {
-      // Mask sensitive data by default
+      // Decrypt then mask sensitive data by default
       const student = {
         ...row.student,
-        nationalId: row.student.nationalId ? "****" : null,
-        citizenship: row.student.citizenship ? "****" : null,
-        religion: row.student.religion ? "****" : null,
-        bloodGroup: row.student.bloodGroup ? "****" : null,
+        nationalId: row.student.nationalId ? (decrypt(row.student.nationalId) ? "****" : null) : null,
+        citizenship: row.student.citizenship ? (decrypt(row.student.citizenship) ? "****" : null) : null,
+        religion: row.student.religion ? (decrypt(row.student.religion) ? "****" : null) : null,
+        bloodGroup: row.student.bloodGroup ? (decrypt(row.student.bloodGroup) ? "****" : null) : null,
       };
       return { ...student, user: row.user, class: row.class };
     });
@@ -718,13 +718,13 @@ export class DatabaseStorage implements IStorage {
       .where(eq(students.id, id));
 
     if (!row) return undefined;
-    // Mask sensitive data by default
+    // Decrypt then mask sensitive data by default
     const student = {
       ...row.student,
-      nationalId: row.student.nationalId ? "****" : null,
-      citizenship: row.student.citizenship ? "****" : null,
-      religion: row.student.religion ? "****" : null,
-      bloodGroup: row.student.bloodGroup ? "****" : null,
+      nationalId: row.student.nationalId ? (decrypt(row.student.nationalId) ? "****" : null) : null,
+      citizenship: row.student.citizenship ? (decrypt(row.student.citizenship) ? "****" : null) : null,
+      religion: row.student.religion ? (decrypt(row.student.religion) ? "****" : null) : null,
+      bloodGroup: row.student.bloodGroup ? (decrypt(row.student.bloodGroup) ? "****" : null) : null,
     };
     return { ...student, user: row.user };
   }
@@ -735,7 +735,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createStudent(student: InsertStudent): Promise<Student> {
-    const [newStudent] = await db.insert(students).values(student).returning();
+    // Encrypt sensitive PII fields before storing
+    const encryptedStudent = {
+      ...student,
+      nationalId: student.nationalId ? encrypt(student.nationalId) : null,
+      citizenship: student.citizenship ? encrypt(student.citizenship) : null,
+      religion: student.religion ? encrypt(student.religion) : null,
+      bloodGroup: student.bloodGroup ? encrypt(student.bloodGroup) : null,
+    };
+    const [newStudent] = await db.insert(students).values(encryptedStudent).returning();
     return newStudent;
   }
 
