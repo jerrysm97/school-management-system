@@ -372,7 +372,7 @@ export default function FeesPage() {
                             <div className="text-2xl font-bold text-emerald-600">{formatCurrency(stats?.totalCollected || 0)}</div>
                             <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                                 <ArrowUpRight className="h-3 w-3 text-emerald-600" />
-                                <span className="text-emerald-600 font-medium">3 invoices paid</span>
+                                <span className="text-emerald-600 font-medium">{paidCount} invoices paid</span>
                             </p>
                         </CardContent>
                     </Card>
@@ -385,9 +385,9 @@ export default function FeesPage() {
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-amber-600">{formatCurrency(stats?.pending || 0)}</div>
+                            <div className="text-2xl font-bold text-amber-600">{formatCurrency(stats?.totalPending || 0)}</div>
                             <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                                <span className="text-amber-600 font-medium">0 invoices awaiting payment</span>
+                                <span className="text-amber-600 font-medium">{pendingCount} invoices awaiting payment</span>
                             </p>
                         </CardContent>
                     </Card>
@@ -400,10 +400,10 @@ export default function FeesPage() {
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-red-600">{formatCurrency(stats?.overdue || 0)}</div>
+                            <div className="text-2xl font-bold text-red-600">{formatCurrency(stats?.totalOverdue || 0)}</div>
                             <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                                 <ArrowDownRight className="h-3 w-3 text-red-600" />
-                                <span className="text-red-600 font-medium">0 invoices overdue</span>
+                                <span className="text-red-600 font-medium">{overdueCount} invoices overdue</span>
                             </p>
                         </CardContent>
                     </Card>
@@ -416,7 +416,7 @@ export default function FeesPage() {
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-blue-600">{stats?.totalInvoices || 0}</div>
+                            <div className="text-2xl font-bold text-blue-600">{totalFees}</div>
                             <p className="text-xs text-muted-foreground mt-1">
                                 {students?.length || 0} students enrolled
                             </p>

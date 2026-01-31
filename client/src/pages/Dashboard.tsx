@@ -15,6 +15,7 @@ import {
 import { JobApplication } from "@shared/schema";
 import { useQuery } from "@tanstack/react-query";
 import { NotificationBell } from "@/components/NotificationBell";
+import { Link } from "wouter";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -220,69 +221,77 @@ function AdminDashboard() {
 
       {/* Stats Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="glass-card border-l-4 border-l-blue-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription className="font-medium text-slate-500">Total Students</CardDescription>
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <GraduationCap className="h-4 w-4 text-blue-700" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-slate-900">{stats?.totalStudents || 0}</p>
-            <p className="text-xs text-emerald-600 mt-1 flex items-center font-medium bg-emerald-50 w-fit px-1.5 py-0.5 rounded-full">
-              <TrendingUp className="h-3 w-3 mr-1" /> +12% growth
-            </p>
-          </CardContent>
-        </Card>
+        <Link to="/students">
+          <Card className="glass-card border-l-4 border-l-blue-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription className="font-medium text-slate-500">Total Students</CardDescription>
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <GraduationCap className="h-4 w-4 text-blue-700" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-slate-900">{stats?.totalStudents || 0}</p>
+              <p className="text-xs text-emerald-600 mt-1 flex items-center font-medium bg-emerald-50 w-fit px-1.5 py-0.5 rounded-full">
+                <TrendingUp className="h-3 w-3 mr-1" /> +12% growth
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card className="glass-card border-l-4 border-l-purple-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription className="font-medium text-slate-500">Total Teachers</CardDescription>
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Users className="h-4 w-4 text-purple-700" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-slate-900">{stats?.totalTeachers || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Active faculty members</p>
-          </CardContent>
-        </Card>
+        <Link to="/teachers">
+          <Card className="glass-card border-l-4 border-l-purple-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription className="font-medium text-slate-500">Total Teachers</CardDescription>
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Users className="h-4 w-4 text-purple-700" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-slate-900">{stats?.totalTeachers || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Active faculty members</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card className="glass-card border-l-4 border-l-green-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription className="font-medium text-slate-500">Active Classes</CardDescription>
-            <div className="p-2 bg-green-100 rounded-lg">
-              <BookOpen className="h-4 w-4 text-green-700" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-slate-900">{stats?.totalClasses || 0}</p>
-            <p className="text-xs text-slate-500 mt-1">Running this term</p>
-          </CardContent>
-        </Card>
+        <Link to="/classes">
+          <Card className="glass-card border-l-4 border-l-green-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription className="font-medium text-slate-500">Active Classes</CardDescription>
+              <div className="p-2 bg-green-100 rounded-lg">
+                <BookOpen className="h-4 w-4 text-green-700" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-slate-900">{stats?.totalClasses || 0}</p>
+              <p className="text-xs text-slate-500 mt-1">Running this term</p>
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card className="glass-card border-l-4 border-l-orange-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardDescription className="font-medium text-slate-500">Attendance Rate</CardDescription>
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <Clock className="h-4 w-4 text-orange-700" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-slate-900">{stats?.attendanceRate ?? 0}%</p>
-            <p className={`text-xs mt-1 flex items-center font-medium w-fit px-1.5 py-0.5 rounded-full ${(stats?.attendanceWeeklyChange ?? 0) >= 0
-              ? 'text-emerald-600 bg-emerald-50'
-              : 'text-red-600 bg-red-50'
-              }`}>
-              {(stats?.attendanceWeeklyChange ?? 0) >= 0 ? (
-                <TrendingUp className="h-3 w-3 mr-1" />
-              ) : (
-                <TrendingDown className="h-3 w-3 mr-1" />
-              )}
-              {(stats?.attendanceWeeklyChange ?? 0) >= 0 ? '+' : ''}{stats?.attendanceWeeklyChange ?? 0}% this week
-            </p>
-          </CardContent>
-        </Card>
+        <Link to="/attendance">
+          <Card className="glass-card border-l-4 border-l-orange-500 hover:shadow-xl hover:translate-y-[-2px] transition-all duration-200 cursor-pointer">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardDescription className="font-medium text-slate-500">Attendance Rate</CardDescription>
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <Clock className="h-4 w-4 text-orange-700" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-slate-900">{stats?.attendanceRate ?? 0}%</p>
+              <p className={`text-xs mt-1 flex items-center font-medium w-fit px-1.5 py-0.5 rounded-full ${(stats?.attendanceWeeklyChange ?? 0) >= 0
+                ? 'text-emerald-600 bg-emerald-50'
+                : 'text-red-600 bg-red-50'
+                }`}>
+                {(stats?.attendanceWeeklyChange ?? 0) >= 0 ? (
+                  <TrendingUp className="h-3 w-3 mr-1" />
+                ) : (
+                  <TrendingDown className="h-3 w-3 mr-1" />
+                )}
+                {(stats?.attendanceWeeklyChange ?? 0) >= 0 ? '+' : ''}{stats?.attendanceWeeklyChange ?? 0}% this week
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Charts and Activity Section */}
@@ -297,20 +306,20 @@ function AdminDashboard() {
             <CardDescription>Fee collection status this term</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="text-center p-4 bg-green-50 rounded-lg border border-green-100">
+            <Link to="/fees" className="grid grid-cols-3 gap-4 mb-6">
+              <div className="text-center p-4 bg-green-50 rounded-lg border border-green-100 hover:shadow-md hover:bg-green-100 transition-all cursor-pointer">
                 <p className="text-2xl font-bold text-green-700">{formatCurrency(feeStats?.totalCollected || 0)}</p>
                 <p className="text-xs text-green-600 mt-1">Collected</p>
               </div>
-              <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-100">
+              <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-100 hover:shadow-md hover:bg-yellow-100 transition-all cursor-pointer">
                 <p className="text-2xl font-bold text-yellow-700">{formatCurrency(feeStats?.totalPending || 0)}</p>
                 <p className="text-xs text-yellow-600 mt-1">Pending</p>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg border border-red-100">
+              <div className="text-center p-4 bg-red-50 rounded-lg border border-red-100 hover:shadow-md hover:bg-red-100 transition-all cursor-pointer">
                 <p className="text-2xl font-bold text-red-700">{formatCurrency(feeStats?.totalOverdue || 0)}</p>
                 <p className="text-xs text-red-600 mt-1">Overdue</p>
               </div>
-            </div>
+            </Link>
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Collection Rate</span>
@@ -323,19 +332,22 @@ function AdminDashboard() {
 
         {/* Recent Students */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <GraduationCap className="h-5 w-5 text-primary" />
-              Recent Students
-            </CardTitle>
-            <CardDescription>Latest admissions</CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <GraduationCap className="h-5 w-5 text-primary" />
+                Recent Students
+              </CardTitle>
+              <CardDescription>Latest admissions</CardDescription>
+            </div>
+            <Link to="/students" className="text-xs text-primary hover:underline">View all →</Link>
           </CardHeader>
           <CardContent className="space-y-4">
             {recentStudents.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No students yet</p>
             ) : (
               recentStudents.map((student: any) => (
-                <div key={student.id} className="flex items-center gap-3">
+                <Link key={student.id} to={`/students`} className="flex items-center gap-3 hover:bg-muted/50 p-2 -mx-2 rounded-lg transition-colors cursor-pointer">
                   <Avatar className="h-9 w-9">
                     <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
                       {student.user.name.charAt(0)}
@@ -348,7 +360,7 @@ function AdminDashboard() {
                   <Badge variant={student.status === 'approved' ? 'default' : 'secondary'} className="text-xs">
                     {student.status}
                   </Badge>
-                </div>
+                </Link>
               ))
             )}
           </CardContent>
@@ -357,42 +369,50 @@ function AdminDashboard() {
 
       {/* Quick Stats Row */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="p-4 flex items-center gap-4">
-          <div className="p-3 bg-green-100 rounded-full">
-            <CheckCircle className="h-5 w-5 text-green-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold">{students?.filter((s: any) => s.status === 'approved').length || 0}</p>
-            <p className="text-xs text-muted-foreground">Approved Students</p>
-          </div>
-        </Card>
-        <Card className="p-4 flex items-center gap-4">
-          <div className="p-3 bg-yellow-100 rounded-full">
-            <Clock className="h-5 w-5 text-yellow-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold">{students?.filter((s: any) => s.status === 'pending').length || 0}</p>
-            <p className="text-xs text-muted-foreground">Pending Approval</p>
-          </div>
-        </Card>
-        <Card className="p-4 flex items-center gap-4">
-          <div className="p-3 bg-blue-100 rounded-full">
-            <Calendar className="h-5 w-5 text-blue-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold">12</p>
-            <p className="text-xs text-muted-foreground">Upcoming Events</p>
-          </div>
-        </Card>
-        <Card className="p-4 flex items-center gap-4">
-          <div className="p-3 bg-purple-100 rounded-full">
-            <AlertTriangle className="h-5 w-5 text-purple-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold">3</p>
-            <p className="text-xs text-muted-foreground">Alerts</p>
-          </div>
-        </Card>
+        <Link to="/students?status=approved">
+          <Card className="p-4 flex items-center gap-4 hover:shadow-lg hover:translate-y-[-2px] transition-all cursor-pointer">
+            <div className="p-3 bg-green-100 rounded-full">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{students?.filter((s: any) => s.status === 'approved').length || 0}</p>
+              <p className="text-xs text-muted-foreground">Approved Students</p>
+            </div>
+          </Card>
+        </Link>
+        <Link to="/students?status=pending">
+          <Card className="p-4 flex items-center gap-4 hover:shadow-lg hover:translate-y-[-2px] transition-all cursor-pointer">
+            <div className="p-3 bg-yellow-100 rounded-full">
+              <Clock className="h-5 w-5 text-yellow-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{students?.filter((s: any) => s.status === 'pending').length || 0}</p>
+              <p className="text-xs text-muted-foreground">Pending Approval</p>
+            </div>
+          </Card>
+        </Link>
+        <Link to="/timetable">
+          <Card className="p-4 flex items-center gap-4 hover:shadow-lg hover:translate-y-[-2px] transition-all cursor-pointer">
+            <div className="p-3 bg-blue-100 rounded-full">
+              <Calendar className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">12</p>
+              <p className="text-xs text-muted-foreground">Upcoming Events</p>
+            </div>
+          </Card>
+        </Link>
+        <Link to="/audit-logs">
+          <Card className="p-4 flex items-center gap-4 hover:shadow-lg hover:translate-y-[-2px] transition-all cursor-pointer">
+            <div className="p-3 bg-purple-100 rounded-full">
+              <AlertTriangle className="h-5 w-5 text-purple-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">3</p>
+              <p className="text-xs text-muted-foreground">Alerts</p>
+            </div>
+          </Card>
+        </Link>
       </div>
     </div>
   );

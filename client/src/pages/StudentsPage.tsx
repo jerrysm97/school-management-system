@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useClasses } from "@/hooks/use-classes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +49,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Search, Filter, User, GraduationCap, Phone, Mail, MapPin, Calendar, Hash, Eye, RefreshCw, CheckCircle, XCircle } from "lucide-react";
+import { Plus, Search, Filter, User, GraduationCap, Phone, Mail, MapPin, Calendar, Hash, Eye, RefreshCw, CheckCircle, XCircle, DollarSign, BookOpen, ClipboardCheck, Award, Clock, AlertCircle } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertStudentSchema, insertUserSchema } from "@shared/schema";
@@ -76,6 +77,24 @@ const createStudentFormSchema = insertStudentSchema.omit({ userId: true }).exten
   ethnicity: z.string().optional(),
   religion: z.string().optional(),
   bloodGroup: z.string().optional(),
+  // Previous Education
+  previousSchoolName: z.string().optional(),
+  previousClass: z.string().optional(),
+  previousGrade: z.string().optional(),
+  previousMarksObtained: z.string().optional(),
+  transferCertificateNo: z.string().optional(),
+  // Payment Setup (for form only, not stored in students table)
+  paymentSetup: z.object({
+    enabled: z.boolean().default(false),
+    feeItems: z.array(z.object({
+      feeType: z.string(),
+      amount: z.number(),
+      selected: z.boolean()
+    })).optional(),
+    frequency: z.enum(["lump", "monthly", "quarterly", "semester"]).optional(),
+    scholarshipId: z.number().optional(),
+    scholarshipAmount: z.number().optional()
+  }).optional()
 });
 
 export default function StudentsPage() {
@@ -84,6 +103,9 @@ export default function StudentsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [createdCreds, setCreatedCreds] = useState<{ username: string, password: string } | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [profileTab, setProfileTab] = useState("overview");
+  const searchParams = useSearch();
+  const [, setLocation] = useLocation();
 
   const { data: students, isLoading } = useStudents(classFilter !== "all" ? Number(classFilter) : undefined);
   const { data: classes } = useClasses();
@@ -93,6 +115,23 @@ export default function StudentsPage() {
   const bulkActionMutation = useBulkActionStudent();
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+  // Handle URL query parameter to open student profile
+  useEffect(() => {
+    if (students && searchParams) {
+      const params = new URLSearchParams(searchParams);
+      const viewId = params.get('view');
+      if (viewId) {
+        const student = students.find(s => s.id === Number(viewId));
+        if (student) {
+          setSelectedStudent(student);
+          setProfileTab("overview");
+          // Clear the URL parameter
+          setLocation('/students', { replace: true });
+        }
+      }
+    }
+  }, [students, searchParams]);
 
   const filteredStudents = students?.filter(student =>
     student.user.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -136,6 +175,27 @@ export default function StudentsPage() {
       ethnicity: "",
       religion: "",
       bloodGroup: "",
+      // Previous Education
+      previousSchoolName: "",
+      previousClass: "",
+      previousGrade: "",
+      previousMarksObtained: "",
+      transferCertificateNo: "",
+      // Payment Setup
+      paymentSetup: {
+        enabled: false,
+        feeItems: [
+          { feeType: "tuition", amount: 0, selected: false },
+          { feeType: "transport", amount: 0, selected: false },
+          { feeType: "library", amount: 0, selected: false },
+          { feeType: "lab", amount: 0, selected: false },
+          { feeType: "hostel", amount: 0, selected: false },
+          { feeType: "exam", amount: 0, selected: false },
+        ],
+        frequency: "lump",
+        scholarshipId: undefined,
+        scholarshipAmount: 0
+      },
       user: {
         name: "",
         username: "",
@@ -208,10 +268,13 @@ export default function StudentsPage() {
       </AlertDialog>
 
       {/* Student Profile Modal */}
-      <Dialog open={!!selectedStudent} onOpenChange={() => setSelectedStudent(null)}>
-        <DialogContent className="max-w-3xl">
+      <Dialog open={!!selectedStudent} onOpenChange={() => { setSelectedStudent(null); setProfileTab("overview"); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Student Profile</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <GraduationCap className="h-5 w-5 text-primary" />
+              Student Profile
+            </DialogTitle>
           </DialogHeader>
           {selectedStudent && (
             <div className="space-y-6">
@@ -225,7 +288,7 @@ export default function StudentsPage() {
                   </Avatar>
                   <div className="flex-1">
                     <h2 className="text-2xl font-bold">{selectedStudent.user.name}</h2>
-                    <div className="flex items-center gap-4 mt-2 text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-3 mt-2 text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Hash className="h-4 w-4" />
                         {selectedStudent.admissionNo}
@@ -241,96 +304,301 @@ export default function StudentsPage() {
                 </div>
               </div>
 
-              {/* Info Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" /> Date of Birth
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="font-semibold">{selectedStudent.dob || "Not set"}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="flex items-center gap-1">
-                      <User className="h-3 w-3" /> Gender
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="font-semibold capitalize">{selectedStudent.gender || "Not set"}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="flex items-center gap-1">
-                      <Phone className="h-3 w-3" /> Phone
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="font-semibold">{selectedStudent.phone || "Not set"}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardDescription className="flex items-center gap-1">
-                      <Mail className="h-3 w-3" /> Email
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="font-semibold text-sm">{selectedStudent.user.email || "Not set"}</p>
-                  </CardContent>
-                </Card>
-                <Card className="col-span-2">
-                  <CardHeader className="pb-2">
-                    <CardDescription className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3" /> Address
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="font-semibold">{selectedStudent.address || "Not set"}</p>
-                  </CardContent>
-                </Card>
-              </div>
+              {/* Tabbed Content */}
+              <Tabs value={profileTab} onValueChange={setProfileTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="overview" className="flex items-center gap-1">
+                    <User className="h-4 w-4" /> Overview
+                  </TabsTrigger>
+                  <TabsTrigger value="education" className="flex items-center gap-1">
+                    <BookOpen className="h-4 w-4" /> Education
+                  </TabsTrigger>
+                  <TabsTrigger value="finance" className="flex items-center gap-1">
+                    <DollarSign className="h-4 w-4" /> Finance
+                  </TabsTrigger>
+                  <TabsTrigger value="attendance" className="flex items-center gap-1">
+                    <ClipboardCheck className="h-4 w-4" /> Attendance
+                  </TabsTrigger>
+                </TabsList>
 
-              {/* Additional Info */}
-              {(selectedStudent.nationalId || selectedStudent.citizenship || selectedStudent.bloodGroup) && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm">Additional Information</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      {selectedStudent.nationalId && (
-                        <div>
-                          <p className="text-muted-foreground">National ID</p>
-                          <p className="font-medium">{selectedStudent.nationalId}</p>
+                {/* Overview Tab */}
+                <TabsContent value="overview" className="space-y-4 mt-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" /> Date of Birth
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="font-semibold">{selectedStudent.dob || "Not set"}</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-1">
+                          <User className="h-3 w-3" /> Gender
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="font-semibold capitalize">{selectedStudent.gender || "Not set"}</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-1">
+                          <Phone className="h-3 w-3" /> Phone
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="font-semibold">{selectedStudent.phone || "Not set"}</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-1">
+                          <Mail className="h-3 w-3" /> Email
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="font-semibold text-sm">{selectedStudent.user.email || "Not set"}</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="col-span-2">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3" /> Address
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="font-semibold">{selectedStudent.address || "Not set"}</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Additional Info */}
+                  {(selectedStudent.nationalId || selectedStudent.citizenship || selectedStudent.bloodGroup || selectedStudent.religion) && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm">Additional Information</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          {selectedStudent.nationalId && (
+                            <div>
+                              <p className="text-muted-foreground">National ID</p>
+                              <p className="font-medium">{selectedStudent.nationalId}</p>
+                            </div>
+                          )}
+                          {selectedStudent.citizenship && (
+                            <div>
+                              <p className="text-muted-foreground">Citizenship</p>
+                              <p className="font-medium">{selectedStudent.citizenship}</p>
+                            </div>
+                          )}
+                          {selectedStudent.bloodGroup && (
+                            <div>
+                              <p className="text-muted-foreground">Blood Group</p>
+                              <p className="font-medium">{selectedStudent.bloodGroup}</p>
+                            </div>
+                          )}
+                          {selectedStudent.religion && (
+                            <div>
+                              <p className="text-muted-foreground">Religion</p>
+                              <p className="font-medium">{selectedStudent.religion}</p>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                {/* Education Tab */}
+                <TabsContent value="education" className="space-y-4 mt-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <BookOpen className="h-4 w-4" /> Previous Academic Record
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {selectedStudent.previousSchoolName ? (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                          <div>
+                            <p className="text-muted-foreground text-sm">Previous School</p>
+                            <p className="font-semibold">{selectedStudent.previousSchoolName}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-sm">Previous Class/Grade</p>
+                            <p className="font-semibold">{selectedStudent.previousClass || "N/A"}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-sm">GPA/Grade Obtained</p>
+                            <p className="font-semibold">{selectedStudent.previousGrade || "N/A"}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-sm">Marks Obtained</p>
+                            <p className="font-semibold">{selectedStudent.previousMarksObtained || "N/A"}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground text-sm">Transfer Certificate No.</p>
+                            <p className="font-semibold">{selectedStudent.transferCertificateNo || "N/A"}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <BookOpen className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                          <p>No previous education records available</p>
                         </div>
                       )}
-                      {selectedStudent.citizenship && (
+                    </CardContent>
+                  </Card>
+
+                  {/* Current Academic Info */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Award className="h-4 w-4" /> Current Academic Standing
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
                         <div>
-                          <p className="text-muted-foreground">Citizenship</p>
-                          <p className="font-medium">{selectedStudent.citizenship}</p>
+                          <p className="text-muted-foreground text-sm">Current Class</p>
+                          <p className="font-semibold">{selectedStudent.class?.name || "Not assigned"}</p>
                         </div>
-                      )}
-                      {selectedStudent.bloodGroup && (
                         <div>
-                          <p className="text-muted-foreground">Blood Group</p>
-                          <p className="font-medium">{selectedStudent.bloodGroup}</p>
+                          <p className="text-muted-foreground text-sm">Admission Date</p>
+                          <p className="font-semibold">{selectedStudent.createdAt ? new Date(selectedStudent.createdAt).toLocaleDateString() : "N/A"}</p>
                         </div>
-                      )}
-                      {selectedStudent.religion && (
                         <div>
-                          <p className="text-muted-foreground">Religion</p>
-                          <p className="font-medium">{selectedStudent.religion}</p>
+                          <p className="text-muted-foreground text-sm">Academic Status</p>
+                          <Badge variant="default">Active</Badge>
                         </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Finance Tab */}
+                <TabsContent value="finance" className="space-y-4 mt-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <Card className="bg-gradient-to-br from-green-50 to-green-100/50 border-green-200">
+                      <CardHeader className="pb-2">
+                        <CardDescription>Total Paid</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-green-700">$0</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-gradient-to-br from-orange-50 to-orange-100/50 border-orange-200">
+                      <CardHeader className="pb-2">
+                        <CardDescription>Pending</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-orange-700">$0</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-gradient-to-br from-red-50 to-red-100/50 border-red-200">
+                      <CardHeader className="pb-2">
+                        <CardDescription>Overdue</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-red-700">$0</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <DollarSign className="h-4 w-4" /> Fee Records
+                      </CardTitle>
+                      <Button variant="outline" size="sm" onClick={() => window.location.href = `/fees?student=${selectedStudent.id}`}>
+                        View All Fees
+                      </Button>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-center py-8 text-muted-foreground">
+                        <DollarSign className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                        <p>No fee records found</p>
+                        <p className="text-sm mt-1">Fee records will appear here once assigned</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Clock className="h-4 w-4" /> Payment Plan
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-center py-6 text-muted-foreground">
+                        <Clock className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                        <p>No active payment plan</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Attendance Tab */}
+                <TabsContent value="attendance" className="space-y-4 mt-4">
+                  <div className="grid grid-cols-4 gap-4">
+                    <Card className="bg-gradient-to-br from-green-50 to-green-100/50 border-green-200">
+                      <CardHeader className="pb-2">
+                        <CardDescription>Present</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-green-700">0</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-gradient-to-br from-red-50 to-red-100/50 border-red-200">
+                      <CardHeader className="pb-2">
+                        <CardDescription>Absent</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-red-700">0</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-gradient-to-br from-yellow-50 to-yellow-100/50 border-yellow-200">
+                      <CardHeader className="pb-2">
+                        <CardDescription>Late</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-yellow-700">0</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200">
+                      <CardHeader className="pb-2">
+                        <CardDescription>Attendance Rate</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-blue-700">--</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <ClipboardCheck className="h-4 w-4" /> Recent Attendance
+                      </CardTitle>
+                      <Button variant="outline" size="sm" onClick={() => window.location.href = `/attendance`}>
+                        View Full Record
+                      </Button>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-center py-8 text-muted-foreground">
+                        <ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                        <p>No attendance records found</p>
+                        <p className="text-sm mt-1">Attendance records will appear here</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             </div>
           )}
         </DialogContent>
@@ -361,10 +629,12 @@ export default function StudentsPage() {
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <Tabs defaultValue="basic" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3">
+                  <TabsList className="grid w-full grid-cols-5">
                     <TabsTrigger value="basic">Basic Info</TabsTrigger>
                     <TabsTrigger value="contact">Contact</TabsTrigger>
                     <TabsTrigger value="additional">Additional</TabsTrigger>
+                    <TabsTrigger value="education">Education</TabsTrigger>
+                    <TabsTrigger value="payment">Payment</TabsTrigger>
                   </TabsList>
 
                   {/* Basic Info Tab */}
@@ -560,6 +830,171 @@ export default function StudentsPage() {
                           </FormItem>
                         )}
                       />
+                    </div>
+                  </TabsContent>
+
+                  {/* Previous Education Tab */}
+                  <TabsContent value="education" className="space-y-4 pt-4">
+                    <div className="bg-muted/30 p-4 rounded-lg border">
+                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <GraduationCap className="h-4 w-4" />
+                        Previous Academic Record
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="previousSchoolName"
+                          render={({ field }) => (
+                            <FormItem className="col-span-2">
+                              <FormLabel>Previous School Name</FormLabel>
+                              <FormControl><Input placeholder="Enter previous school name" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="previousClass"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Previous Class/Grade</FormLabel>
+                              <FormControl><Input placeholder="e.g., Grade 9" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="previousGrade"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Grade/GPA Obtained</FormLabel>
+                              <FormControl><Input placeholder="e.g., A, 3.5 GPA" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="previousMarksObtained"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Marks Obtained</FormLabel>
+                              <FormControl><Input placeholder="e.g., 450/500" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="transferCertificateNo"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Transfer Certificate No.</FormLabel>
+                              <FormControl><Input placeholder="TC Number" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  {/* Payment Setup Tab */}
+                  <TabsContent value="payment" className="space-y-4 pt-4">
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <Hash className="h-4 w-4" />
+                          Fee Configuration
+                        </h4>
+                        <label className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={form.watch("paymentSetup.enabled")}
+                            onCheckedChange={(checked) => form.setValue("paymentSetup.enabled", !!checked)}
+                          />
+                          <span>Enable Payment Plan</span>
+                        </label>
+                      </div>
+
+                      {form.watch("paymentSetup.enabled") && (
+                        <div className="space-y-4">
+                          {/* Fee Items */}
+                          <div className="grid grid-cols-2 gap-3">
+                            {form.watch("paymentSetup.feeItems")?.map((item: any, index: number) => (
+                              <div key={item.feeType} className="flex items-center gap-2 p-2 bg-white rounded border">
+                                <Checkbox
+                                  checked={item.selected}
+                                  onCheckedChange={(checked) => {
+                                    const feeItems = form.getValues("paymentSetup.feeItems") || [];
+                                    feeItems[index].selected = !!checked;
+                                    form.setValue("paymentSetup.feeItems", [...feeItems]);
+                                  }}
+                                />
+                                <span className="flex-1 capitalize text-sm">{item.feeType}</span>
+                                <Input
+                                  type="number"
+                                  className="w-24 h-8 text-sm"
+                                  placeholder="Amount"
+                                  value={item.amount || ""}
+                                  onChange={(e) => {
+                                    const feeItems = form.getValues("paymentSetup.feeItems") || [];
+                                    feeItems[index].amount = Number(e.target.value);
+                                    form.setValue("paymentSetup.feeItems", [...feeItems]);
+                                  }}
+                                  disabled={!item.selected}
+                                />
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Total Display */}
+                          <div className="flex justify-between items-center pt-2 border-t">
+                            <span className="font-semibold">Total Amount:</span>
+                            <span className="text-xl font-bold text-green-700">
+                              ${(form.watch("paymentSetup.feeItems")?.filter((i: any) => i.selected).reduce((sum: number, i: any) => sum + (i.amount || 0), 0) || 0).toLocaleString()}
+                            </span>
+                          </div>
+
+                          {/* Payment Frequency */}
+                          <div>
+                            <FormLabel className="text-sm">Payment Frequency</FormLabel>
+                            <Select
+                              value={form.watch("paymentSetup.frequency")}
+                              onValueChange={(val) => form.setValue("paymentSetup.frequency", val as any)}
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue placeholder="Select frequency" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="lump">Lump Sum (One Time)</SelectItem>
+                                <SelectItem value="monthly">Monthly Installments</SelectItem>
+                                <SelectItem value="quarterly">Quarterly</SelectItem>
+                                <SelectItem value="semester">Semester-based</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Scholarship (optional) */}
+                          <div className="bg-purple-50 p-3 rounded border border-purple-200">
+                            <FormLabel className="text-sm flex items-center gap-2">
+                              <GraduationCap className="h-4 w-4 text-purple-600" />
+                              Apply Scholarship (Optional)
+                            </FormLabel>
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                              <Input
+                                type="number"
+                                placeholder="Scholarship Amount"
+                                value={form.watch("paymentSetup.scholarshipAmount") || ""}
+                                onChange={(e) => form.setValue("paymentSetup.scholarshipAmount", Number(e.target.value))}
+                              />
+                              <div className="text-right text-sm text-muted-foreground pt-2">
+                                Net: ${Math.max(0, (form.watch("paymentSetup.feeItems")?.filter((i: any) => i.selected).reduce((sum: number, i: any) => sum + (i.amount || 0), 0) || 0) - (form.watch("paymentSetup.scholarshipAmount") || 0)).toLocaleString()}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </TabsContent>
                 </Tabs>

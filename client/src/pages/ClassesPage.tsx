@@ -160,20 +160,65 @@ export default function ClassesPage() {
 
               {/* Students in Class */}
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-sm">Enrolled Students</CardTitle>
+                  <Badge variant="outline">{getStudentCount(selectedClass.id)} total</Badge>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {students?.filter((s: any) => s.classId === selectedClass.id).slice(0, 10).map((student: any) => (
-                      <Badge key={student.id} variant="secondary" className="py-1">
-                        {student.user.name}
-                      </Badge>
-                    ))}
-                    {getStudentCount(selectedClass.id) === 0 && (
-                      <p className="text-sm text-muted-foreground">No students enrolled</p>
-                    )}
-                  </div>
+                  {getStudentCount(selectedClass.id) === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No students enrolled in this class</p>
+                  ) : (
+                    <div className="max-h-[300px] overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Student</TableHead>
+                            <TableHead>Admission No.</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {students?.filter((s: any) => s.classId === selectedClass.id).map((student: any) => (
+                            <TableRow
+                              key={student.id}
+                              className="cursor-pointer hover:bg-muted/50"
+                              onClick={() => {
+                                setSelectedClass(null);
+                                window.location.href = `/students?view=${student.id}`;
+                              }}
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-8 w-8">
+                                    <AvatarFallback className="bg-green-100 text-green-700 text-xs">
+                                      {student.user.name.charAt(0)}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="font-medium">{student.user.name}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">{student.admissionNo}</TableCell>
+                              <TableCell>
+                                <Badge variant={student.status === 'approved' ? 'default' : 'secondary'} className="capitalize">
+                                  {student.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button variant="ghost" size="sm" onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedClass(null);
+                                  window.location.href = `/students?view=${student.id}`;
+                                }}>
+                                  <Eye className="h-4 w-4 mr-1" /> View
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

@@ -1,8 +1,5 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
     Card,
     CardContent,
@@ -25,224 +22,214 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Loader2, Users, Check } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-
-const assignFeeSchema = z.object({
-    feeStructureId: z.coerce.number().min(1, "Select a fee structure"),
-    classId: z.string().optional(), // Used for filtering, not sending
-    dueDate: z.string().min(1, "Due date is required"),
-});
+import { DollarSign, Users, AlertTriangle, CheckCircle, Clock, Search } from "lucide-react";
 
 export default function FeeAssignmentPage() {
-    const { toast } = useToast();
-    const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
     const [selectedClassId, setSelectedClassId] = useState<string>("all");
-
-    const { data: feeStructures } = useQuery<any[]>({
-        queryKey: ["/api/fee-structures"],
-    });
+    const [search, setSearch] = useState("");
 
     const { data: classes } = useQuery<any[]>({
         queryKey: ["/api/classes"],
     });
 
-    const { data: students, isLoading: isLoadingStudents } = useQuery<any[]>({
-        queryKey: ["/api/students", { classId: selectedClassId !== "all" ? selectedClassId : undefined }],
+    const { data: students, isLoading } = useQuery<any[]>({
+        queryKey: ["/api/students"],
     });
 
-    const form = useForm({
-        resolver: zodResolver(assignFeeSchema),
-        defaultValues: {
-            feeStructureId: undefined,
-            classId: "all",
-            dueDate: "",
-        },
+    const { data: fees } = useQuery<any[]>({
+        queryKey: ["/api/fees"],
     });
 
-    const assignMutation = useMutation({
-        mutationFn: async (data: any) => {
-            const payload = {
-                feeStructureId: data.feeStructureId,
-                studentIds: selectedStudentIds,
-                dueDate: data.dueDate,
-            };
-            await apiRequest("POST", "/api/fees/assign-bulk", payload);
-        },
-        onSuccess: (data: any) => {
-            toast({ title: "Success", description: "Fees assigned successfully" });
-            setSelectedStudentIds([]);
-            form.reset();
-        },
-        onError: (error: any) => {
-            toast({ title: "Error", description: error.message, variant: "destructive" });
-        },
-    });
+    // Filter students by class
+    const filteredStudents = students?.filter((s: any) => {
+        const matchesClass = selectedClassId === "all" || String(s.classId) === selectedClassId;
+        const matchesSearch = s.user?.name?.toLowerCase().includes(search.toLowerCase()) ||
+            s.admissionNo?.toLowerCase().includes(search.toLowerCase());
+        return matchesClass && matchesSearch;
+    }) || [];
 
-    const filteredStudents = useMemo(() => {
-        if (!students) return [];
-        if (selectedClassId === "all") return students;
-        return students.filter((s: any) => s.classId?.toString() === selectedClassId);
-    }, [students, selectedClassId]);
+    // Get fee summary for a student
+    const getStudentFees = (studentId: number) => {
+        const studentFees = fees?.filter((f: any) => f.studentId === studentId) || [];
+        const total = studentFees.reduce((sum: number, f: any) => sum + (f.amount || 0), 0);
+        const paid = studentFees.filter((f: any) => f.status === 'paid').reduce((sum: number, f: any) => sum + (f.amount || 0), 0);
+        const pending = studentFees.filter((f: any) => f.status === 'pending').reduce((sum: number, f: any) => sum + (f.amount || 0), 0);
+        const overdue = studentFees.filter((f: any) => f.status === 'overdue').reduce((sum: number, f: any) => sum + (f.amount || 0), 0);
+        return { total, paid, pending, overdue, count: studentFees.length };
+    };
 
-    const handleSelectAll = (checked: boolean) => {
-        if (checked) {
-            setSelectedStudentIds(filteredStudents.map((s: any) => s.id));
-        } else {
-            setSelectedStudentIds([]);
+    // Calculate totals
+    const totalStudentsWithFees = filteredStudents.filter(s => getStudentFees(s.id).count > 0).length;
+    const totalFeesAssigned = fees?.length || 0;
+    const totalPending = fees?.filter((f: any) => f.status === 'pending').length || 0;
+    const totalOverdue = fees?.filter((f: any) => f.status === 'overdue').length || 0;
+
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'paid':
+                return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Paid</Badge>;
+            case 'pending':
+                return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">Pending</Badge>;
+            case 'overdue':
+                return <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Overdue</Badge>;
+            default:
+                return <Badge variant="secondary">No Fees</Badge>;
         }
     };
 
-    const handleSelectStudent = (studentId: number, checked: boolean) => {
-        if (checked) {
-            setSelectedStudentIds([...selectedStudentIds, studentId]);
-        } else {
-            setSelectedStudentIds(selectedStudentIds.filter((id) => id !== studentId));
-        }
-    };
-
-    const onSubmit = (data: any) => {
-        if (selectedStudentIds.length === 0) {
-            toast({ title: "Error", description: "Select at least one student", variant: "destructive" });
-            return;
-        }
-        assignMutation.mutate(data);
+    const getOverallStatus = (studentId: number) => {
+        const { overdue, pending, paid, count } = getStudentFees(studentId);
+        if (count === 0) return 'none';
+        if (overdue > 0) return 'overdue';
+        if (pending > 0) return 'pending';
+        return 'paid';
     };
 
     return (
         <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
             <div>
-                <h1 className="text-3xl font-bold">Fee Assignment</h1>
+                <h1 className="text-3xl font-bold flex items-center gap-2">
+                    <DollarSign className="h-8 w-8 text-primary" />
+                    Fee Overview
+                </h1>
                 <p className="text-muted-foreground mt-1">
-                    Bulk assign fees to students based on classes or programs.
+                    View fee status for enrolled students. Fees are assigned during student enrollment.
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card className="md:col-span-1">
-                    <CardHeader>
-                        <CardTitle>Assignment Details</CardTitle>
-                        <CardDescription>Select fee and target group</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                            <div className="space-y-2">
-                                <Label>Fee Structure</Label>
-                                <Select
-                                    onValueChange={(val) => form.setValue("feeStructureId", parseInt(val))}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select Fee" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {feeStructures?.map((fs) => (
-                                            <SelectItem key={fs.id} value={fs.id.toString()}>
-                                                {fs.description} - ${(fs.amount / 100).toFixed(2)}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                {form.formState.errors.feeStructureId && (
-                                    <p className="text-sm text-red-500">{form.formState.errors.feeStructureId.message}</p>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label>Filter by Class</Label>
-                                <Select
-                                    value={selectedClassId}
-                                    onValueChange={(val) => setSelectedClassId(val)}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="All Classes" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Classes</SelectItem>
-                                        {classes?.map((c) => (
-                                            <SelectItem key={c.id} value={c.id.toString()}>
-                                                {c.name} - {c.section}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label>Due Date</Label>
-                                <Input type="date" {...form.register("dueDate")} />
-                                {form.formState.errors.dueDate && (
-                                    <p className="text-sm text-red-500">{form.formState.errors.dueDate.message}</p>
-                                )}
-                            </div>
-
-                            <div className="pt-4">
-                                <Button type="submit" className="w-full" disabled={assignMutation.isPending}>
-                                    {assignMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                    Assign to {selectedStudentIds.length} Students
-                                </Button>
-                            </div>
-                        </form>
-                    </CardContent>
-                </Card>
-
-                <Card className="md:col-span-2">
-                    <CardHeader>
-                        <CardTitle>Select Students</CardTitle>
-                        <CardDescription>
-                            {selectedStudentIds.length} selected
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200">
+                    <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-1">
+                            <Users className="h-4 w-4" /> Students with Fees
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="rounded-md border h-[500px] overflow-auto">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead className="w-[50px]">
-                                            <Checkbox
-                                                checked={filteredStudents?.length > 0 && selectedStudentIds.length === filteredStudents?.length}
-                                                onCheckedChange={(checked) => handleSelectAll(checked as boolean)}
-                                            />
-                                        </TableHead>
-                                        <TableHead>Student Name</TableHead>
-                                        <TableHead>Admission No</TableHead>
-                                        <TableHead>Class</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {isLoadingStudents ? (
-                                        <TableRow>
-                                            <TableCell colSpan={4} className="h-24 text-center">Loading...</TableCell>
-                                        </TableRow>
-                                    ) : filteredStudents?.length === 0 ? (
-                                        <TableRow>
-                                            <TableCell colSpan={4} className="h-24 text-center">No students found.</TableCell>
-                                        </TableRow>
-                                    ) : (
-                                        filteredStudents?.map((student: any) => (
-                                            <TableRow key={student.id}>
-                                                <TableCell>
-                                                    <Checkbox
-                                                        checked={selectedStudentIds.includes(Number(student.id))}
-                                                        onCheckedChange={(checked) => handleSelectStudent(Number(student.id), checked === true)}
-                                                    />
-                                                </TableCell>
-                                                <TableCell className="font-medium">{student.user?.name}</TableCell>
-                                                <TableCell>{student.admissionNo}</TableCell>
-                                                <TableCell>{student.class?.name} {student.class?.section}</TableCell>
-                                            </TableRow>
-                                        ))
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </div>
+                        <p className="text-3xl font-bold text-blue-700">{totalStudentsWithFees}</p>
+                    </CardContent>
+                </Card>
+                <Card className="bg-gradient-to-br from-green-50 to-green-100/50 border-green-200">
+                    <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-1">
+                            <CheckCircle className="h-4 w-4" /> Total Fees Assigned
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-3xl font-bold text-green-700">{totalFeesAssigned}</p>
+                    </CardContent>
+                </Card>
+                <Card className="bg-gradient-to-br from-yellow-50 to-yellow-100/50 border-yellow-200">
+                    <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-1">
+                            <Clock className="h-4 w-4" /> Pending Payments
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-3xl font-bold text-yellow-700">{totalPending}</p>
+                    </CardContent>
+                </Card>
+                <Card className="bg-gradient-to-br from-red-50 to-red-100/50 border-red-200">
+                    <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-1">
+                            <AlertTriangle className="h-4 w-4" /> Overdue
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-3xl font-bold text-red-700">{totalOverdue}</p>
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-4">
+                <div className="relative w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Search students..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="pl-9"
+                    />
+                </div>
+                <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                    <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Filter by Class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Classes</SelectItem>
+                        {classes?.map((c) => (
+                            <SelectItem key={c.id} value={c.id.toString()}>
+                                {c.name} - {c.section}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+
+            {/* Students Fee Table */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Student Fee Status</CardTitle>
+                    <CardDescription>
+                        Showing {filteredStudents.length} students
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="rounded-md border">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Student Name</TableHead>
+                                    <TableHead>Admission No</TableHead>
+                                    <TableHead>Class</TableHead>
+                                    <TableHead className="text-right">Total Fees</TableHead>
+                                    <TableHead className="text-right">Paid</TableHead>
+                                    <TableHead className="text-right">Pending</TableHead>
+                                    <TableHead>Status</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {isLoading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={7} className="h-24 text-center">Loading...</TableCell>
+                                    </TableRow>
+                                ) : filteredStudents.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                                            No students found.
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    filteredStudents.map((student: any) => {
+                                        const feeData = getStudentFees(student.id);
+                                        const status = getOverallStatus(student.id);
+                                        return (
+                                            <TableRow key={student.id}>
+                                                <TableCell className="font-medium">{student.user?.name}</TableCell>
+                                                <TableCell>{student.admissionNo}</TableCell>
+                                                <TableCell>{student.class?.name || '-'}</TableCell>
+                                                <TableCell className="text-right font-semibold">
+                                                    ${(feeData.total / 100).toFixed(2)}
+                                                </TableCell>
+                                                <TableCell className="text-right text-green-600">
+                                                    ${(feeData.paid / 100).toFixed(2)}
+                                                </TableCell>
+                                                <TableCell className="text-right text-orange-600">
+                                                    ${((feeData.pending + feeData.overdue) / 100).toFixed(2)}
+                                                </TableCell>
+                                                <TableCell>{getStatusBadge(status)}</TableCell>
+                                            </TableRow>
+                                        );
+                                    })
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 }

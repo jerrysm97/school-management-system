@@ -137,7 +137,7 @@ const authorizeStudentAccess = async (req: Request, res: Response, next: NextFun
   }
 
   // Extract requested student ID from params
-  const requestedId = req.params.studentId || req.params.id;
+  const requestedId = Number(req.params.studentId || req.params.id);
 
   if (!requestedId) {
     // No student ID in params, let the route handler decide
@@ -298,7 +298,7 @@ export async function registerRoutes(
 
   app.get(api.auth.me.path, authenticateToken, async (req, res) => {
     const userId = (req as any).user.id;
-    const user = await storage.getUser(userId);
+    const user = await storage.getUser(Number(userId));
     if (!user) return res.sendStatus(404);
     const { password: _, ...userWithoutPassword } = user;
     res.json(userWithoutPassword);
@@ -314,7 +314,7 @@ export async function registerRoutes(
     }
 
     const { userId } = req.body;
-    const targetUser = await storage.getUser(userId);
+    const targetUser = await storage.getUser(Number(userId));
 
     if (!targetUser) {
       return res.status(404).json({ message: "Target user not found" });
@@ -369,7 +369,7 @@ export async function registerRoutes(
 
   // --- Students ---
   app.get(api.students.list.path, authenticateToken, async (req, res) => {
-    const classId = req.query.classId ? String(req.query.classId) : undefined;
+    const classId = req.query.classId ? Number(req.query.classId) : undefined;
     const status = req.query.status as any;
     const students = await storage.getStudents(classId, status);
     res.json(students);
@@ -403,7 +403,7 @@ export async function registerRoutes(
     const allowedRoles = ['admin', 'main_admin', 'principal'];
     if (!allowedRoles.includes(userRole)) return res.sendStatus(403);
     const { status } = req.body;
-    await storage.updateStudentStatus(req.params.id as string, status);
+    await storage.updateStudentStatus(Number(req.params.id), status);
     res.json({ message: `Student ${status}` });
   });
 
@@ -418,7 +418,7 @@ export async function registerRoutes(
       return res.status(403).json({ message: "Insufficient permissions to create students" });
     }
     try {
-      const { user: userData, ...studentDetails } = req.body;
+      const { user: userData, paymentSetup, ...studentDetails } = req.body;
 
       // Check for existing username
       const existingUser = await storage.getUserByUsername(userData.username);
@@ -441,10 +441,83 @@ export async function registerRoutes(
         userId: newUser.id
       });
 
+      // Create payment plan if enabled
+      let createdPaymentPlan = null;
+      let createdFees: any[] = [];
+
+      if (paymentSetup?.enabled && paymentSetup?.feeItems) {
+        const selectedFees = paymentSetup.feeItems.filter((item: any) => item.selected && item.amount > 0);
+        const totalAmount = selectedFees.reduce((sum: number, item: any) => sum + item.amount, 0);
+        const scholarshipAmount = paymentSetup.scholarshipAmount || 0;
+        const netAmount = Math.max(0, totalAmount - scholarshipAmount);
+
+        if (netAmount > 0) {
+          // Determine installments based on frequency
+          const today = new Date();
+          let installmentCount = 1;
+          switch (paymentSetup.frequency) {
+            case 'monthly': installmentCount = 12; break;
+            case 'quarterly': installmentCount = 4; break;
+            case 'semester': installmentCount = 2; break;
+            default: installmentCount = 1; // lump sum
+          }
+
+          // Create payment plan
+          const endDate = new Date(today);
+          endDate.setFullYear(endDate.getFullYear() + 1);
+
+          createdPaymentPlan = await storage.createPaymentPlan({
+            studentId: newStudent.id,
+            totalAmount: netAmount * 100, // convert to cents
+            startDate: today.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0],
+            frequency: paymentSetup.frequency || 'lump',
+            status: 'active',
+            notes: scholarshipAmount > 0 ? `Scholarship applied: $${scholarshipAmount}` : null
+          });
+
+          // Create installments
+          const installmentAmount = Math.round((netAmount * 100) / installmentCount);
+          for (let i = 0; i < installmentCount; i++) {
+            const dueDate = new Date(today);
+            if (paymentSetup.frequency === 'monthly') {
+              dueDate.setMonth(dueDate.getMonth() + i);
+            } else if (paymentSetup.frequency === 'quarterly') {
+              dueDate.setMonth(dueDate.getMonth() + (i * 3));
+            } else if (paymentSetup.frequency === 'semester') {
+              dueDate.setMonth(dueDate.getMonth() + (i * 6));
+            }
+
+            await storage.createPaymentPlanInstallment({
+              paymentPlanId: createdPaymentPlan.id,
+              dueDate: dueDate.toISOString().split('T')[0],
+              amount: installmentAmount,
+              status: 'pending',
+              paidAmount: 0
+            });
+          }
+
+          // Create fee records for each selected fee type
+          for (const feeItem of selectedFees) {
+            const fee = await storage.createFee({
+              studentId: newStudent.id,
+              amount: feeItem.amount * 100, // convert to cents
+              dueDate: today.toISOString().split('T')[0],
+              description: `${feeItem.feeType.charAt(0).toUpperCase() + feeItem.feeType.slice(1)} Fee`,
+              status: 'pending',
+              category: feeItem.feeType
+            });
+            createdFees.push(fee);
+          }
+        }
+      }
+
       res.status(201).json({
         ...newStudent,
         user: newUser,
-        generatedPassword: tempPassword
+        generatedPassword: tempPassword,
+        paymentPlan: createdPaymentPlan,
+        fees: createdFees
       });
     } catch (e: any) {
       console.error("Student creation error:", e);
@@ -453,7 +526,7 @@ export async function registerRoutes(
   });
 
   app.get(api.students.get.path, authenticateToken, async (req, res) => {
-    const student = await storage.getStudent(req.params.id);
+    const student = await storage.getStudent(Number(req.params.id));
     if (!student) return res.status(404).json({ message: "Student not found" });
     res.json(student);
   });
@@ -533,8 +606,8 @@ export async function registerRoutes(
   // --- Attendance ---
   app.get(api.attendance.list.path, authenticateToken, async (req, res) => {
     const user = (req as any).user;
-    let classId = req.query.classId as string | undefined;
-    let studentId = req.query.studentId as string | undefined;
+    let classId = req.query.classId ? Number(req.query.classId) : undefined;
+    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
 
     // Students/Parents see only their own attendance
     if (user.role === 'student' || user.role === 'parent') {
@@ -563,7 +636,7 @@ export async function registerRoutes(
   // --- Fees ---
   app.get(api.fees.list.path, authenticateToken, async (req, res) => {
     const user = (req as any).user;
-    let studentId = req.query.studentId ? String(req.query.studentId) : undefined;
+    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
 
     // If student, force filter to their own record
     if (user.role === 'student' || user.role === 'parent') {
