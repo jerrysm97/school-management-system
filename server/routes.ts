@@ -26,6 +26,11 @@ if (!JWT_SECRET) {
   throw new Error("FATAL: SESSION_SECRET environment variable is not set. Server cannot start.");
 }
 
+const getQueryParam = (param: string | string[] | undefined): string | undefined => {
+  if (Array.isArray(param)) return param[0];
+  return param;
+};
+
 // ========================================
 // RATE LIMITERS
 // ========================================
@@ -411,7 +416,7 @@ export async function registerRoutes(
   // --- Students ---
   app.get(api.students.list.path, authenticateToken, async (req, res) => {
     const classId = req.query.classId ? Number(req.query.classId) : undefined;
-    const status = req.query.status as any;
+    const status = getQueryParam(req.query.status);
     const students = await storage.getStudents(classId, status);
     res.json(students);
   });
@@ -646,7 +651,7 @@ export async function registerRoutes(
   app.get(api.attendance.list.path, authenticateToken, async (req, res) => {
     const user = (req as any).user;
     let classId = req.query.classId ? Number(req.query.classId) : undefined;
-    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    let studentId = getQueryParam(req.query.studentId);
 
     // Students/Parents see only their own attendance
     if (user.role === 'student' || user.role === 'parent') {
@@ -656,7 +661,7 @@ export async function registerRoutes(
       classId = undefined; // Force lookup by student ID
     }
 
-    const records = await storage.getAttendance(classId, req.query.date as string, studentId);
+    const records = await storage.getAttendance(classId, getQueryParam(req.query.date), studentId);
     res.json(records);
   });
 
@@ -799,6 +804,29 @@ export async function registerRoutes(
       res.status(400).json({ message: e.message || "Error updating fee" });
     }
   });
+
+  // --- Library ---
+  // Publicly accessible for now, or authenticated
+  app.get("/api/library/books", authenticateToken, async (req, res) => {
+    try {
+      // In a real app, we'd add search/pagination parameters here
+      const books = await storage.getBooks();
+      res.json(books);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message || "Error fetching books" });
+    }
+  });
+
+  app.post("/api/library/books", authenticateToken, requirePermission('library', 'write'), async (req, res) => {
+    try {
+      // Basic validation/creation
+      const book = await storage.createBook(req.body);
+      res.status(201).json(book);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Error adding book" });
+    }
+  });
+
 
   app.get(api.fees.stats.path, authenticateToken, async (req, res) => {
     const stats = await storage.getFeeStats();

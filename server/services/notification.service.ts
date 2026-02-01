@@ -26,7 +26,7 @@ export class NotificationService {
     }
 
     // Get user's unread notifications
-    async getUnreadNotifications(userId: number) {
+    async getUnreadNotifications(userId: string) {
         return await db.select().from(notifications)
             .where(and(
                 eq(notifications.userId, userId),
@@ -37,7 +37,7 @@ export class NotificationService {
     }
 
     // Get all notifications for user (paginated)
-    async getNotifications(userId: number, limit = 20, offset = 0) {
+    async getNotifications(userId: string, limit = 20, offset = 0) {
         return await db.select().from(notifications)
             .where(eq(notifications.userId, userId))
             .orderBy(sql`${notifications.createdAt} DESC`)
@@ -46,7 +46,7 @@ export class NotificationService {
     }
 
     // Mark notification as read
-    async markAsRead(notificationId: number, userId: number): Promise<void> {
+    async markAsRead(notificationId: number, userId: string): Promise<void> {
         await db.update(notifications)
             .set({ readAt: new Date(), status: "read" })
             .where(and(
@@ -56,7 +56,7 @@ export class NotificationService {
     }
 
     // Mark all as read
-    async markAllAsRead(userId: number): Promise<void> {
+    async markAllAsRead(userId: string): Promise<void> {
         await db.update(notifications)
             .set({ readAt: new Date(), status: "read" })
             .where(and(
@@ -66,7 +66,7 @@ export class NotificationService {
     }
 
     // Get unread count
-    async getUnreadCount(userId: number): Promise<number> {
+    async getUnreadCount(userId: string): Promise<number> {
         const result = await db.select({ count: sql<number>`count(*)` })
             .from(notifications)
             .where(and(
@@ -81,7 +81,7 @@ export class NotificationService {
     // =========================================================================
 
     // Send fee reminder to a student
-    async sendFeeReminder(studentId: number, feeId: number, dueDate: string, amount: number): Promise<void> {
+    async sendFeeReminder(studentId: string, feeId: number, dueDate: string, amount: number): Promise<void> {
         // Get student's user ID
         const studentResult = await db.select({
             userId: students.userId,
@@ -113,7 +113,7 @@ export class NotificationService {
     }
 
     // Send overdue fee alert
-    async sendOverdueAlert(studentId: number, feeId: number, amount: number, daysOverdue: number): Promise<void> {
+    async sendOverdueAlert(studentId: string, feeId: number, amount: number, daysOverdue: number): Promise<void> {
         const studentResult = await db.select({
             userId: students.userId,
             name: users.name
@@ -142,7 +142,7 @@ export class NotificationService {
     }
 
     // Send payment confirmation
-    async sendPaymentConfirmation(studentId: number, amount: number, receiptNumber?: string): Promise<void> {
+    async sendPaymentConfirmation(studentId: string, amount: number, receiptNumber?: string): Promise<void> {
         const studentResult = await db.select({
             userId: students.userId,
             name: users.name

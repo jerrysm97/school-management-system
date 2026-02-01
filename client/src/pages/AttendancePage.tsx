@@ -36,13 +36,13 @@ import {
 export default function AttendancePage() {
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [date, setDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
-  const [attendanceState, setAttendanceState] = useState<Record<number, "present" | "absent" | "late" | "excused">>({});
+  const [attendanceState, setAttendanceState] = useState<Record<string, "present" | "absent" | "late" | "excused">>({});
 
   const { data: classes } = useClasses();
-  const { data: students, isLoading: isLoadingStudents } = useStudents(selectedClassId ? Number(selectedClassId) : undefined);
+  const { data: students, isLoading: isLoadingStudents } = useStudents(selectedClassId ? selectedClassId : undefined);
   const markAttendanceMutation = useMarkAttendance();
 
-  const handleStatusChange = (studentId: number, status: string) => {
+  const handleStatusChange = (studentId: string, status: string) => {
     setAttendanceState(prev => ({
       ...prev,
       [studentId]: status as any
@@ -94,7 +94,7 @@ export default function AttendancePage() {
   // Mark all quick actions
   const markAll = (status: "present" | "absent" | "late") => {
     if (!students) return;
-    const newState: Record<number, typeof status> = {};
+    const newState: Record<string, typeof status> = {};
     students.forEach(s => { newState[s.id] = status; });
     setAttendanceState(newState);
   };

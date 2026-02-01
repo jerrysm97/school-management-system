@@ -40,7 +40,7 @@ export const submissionStatusEnum = pgEnum("submission_status", ["submitted", "g
 
 // Users Table (Supabase Auth Linked)
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
+  id: uuid("id").primaryKey().defaultRandom(),
   authId: uuid("auth_id").unique(), // Links to Supabase auth.users.id
   name: text("name").notNull(),
   username: text("username").unique().notNull(),
@@ -68,8 +68,8 @@ export const academicPeriods = pgTable("academic_periods", {
 
 // Teachers Table
 export const teachers = pgTable("teachers", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   department: text("department"),
   phone: text("phone"),
   metadata: jsonb("metadata").default({}),
@@ -78,8 +78,8 @@ export const teachers = pgTable("teachers", {
 
 // Parents Table
 export const parents = pgTable("parents", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   phone: text("phone"),
   address: text("address"),
   metadata: jsonb("metadata").default({}),
@@ -99,8 +99,8 @@ export const classes = pgTable("classes", {
 
 // Students Table (Supabase Ready)
 export const students = pgTable("students", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id),
   admissionNo: text("admission_no").unique().notNull(),
   classId: integer("class_id").references(() => classes.id),
   dob: date("dob").notNull(),
@@ -143,7 +143,7 @@ export const classSubjects = pgTable("class_subjects", {
 // Attendance Table
 export const attendance = pgTable("attendance", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   academicPeriodId: integer("academic_period_id").references(() => academicPeriods.id), // Better history tracking
   date: date("date").notNull(),
   status: attendanceStatusEnum("status").notNull(),
@@ -164,14 +164,14 @@ export const exams = pgTable("exams", {
 export const marks = pgTable("marks", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   examId: integer("exam_id").notNull().references(() => exams.id),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   score: integer("score").notNull(),
 });
 
 // Course History
 export const courseHistory = pgTable("course_history", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   subjectId: integer("subject_id").notNull().references(() => subjects.id),
   academicPeriodId: integer("academic_period_id").notNull().references(() => academicPeriods.id),
   score: integer("score"),
@@ -183,7 +183,7 @@ export const courseHistory = pgTable("course_history", {
 // Fees Table
 export const fees = pgTable("fees", {
   id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   amount: integer("amount").notNull(),
   dueDate: date("due_date").notNull(),
   status: feeStatusEnum("status").default("pending").notNull(),
@@ -216,7 +216,7 @@ export const timetable = pgTable("timetable", {
 // Student Accounts - Real-time financial standing
 export const studentAccounts = pgTable("student_accounts", {
   id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull().references(() => students.id).unique(),
+  studentId: uuid("student_id").notNull().references(() => students.id).unique(),
   currentBalance: integer("current_balance").default(0).notNull(), // in cents
   accountType: accountTypeEnum("account_type").default("checking"),
   residencyStatus: residencyEnum("residency_status").default("in_state"),
@@ -240,7 +240,7 @@ export const feeStructures = pgTable("fee_structures", {
 // Enrollment History - Tracks changes that trigger recalculation
 export const enrollmentHistory = pgTable("enrollment_history", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   subjectId: integer("subject_id").notNull().references(() => subjects.id),
   academicPeriodId: integer("academic_period_id").notNull().references(() => academicPeriods.id),
   status: enrollmentStatusEnum("status").notNull().default("enrolled"),
@@ -267,7 +267,7 @@ export const financialTransactions = pgTable("financial_transactions", {
 // Financial Aid Awards - Tracks aid from external sources
 export const financialAidAwards = pgTable("financial_aid_awards", {
   id: serial("id").primaryKey(),
-  studentId: integer("student_id").notNull().references(() => students.id),
+  studentId: uuid("student_id").notNull().references(() => students.id),
   aidType: aidTypeEnum("aid_type").notNull(),
   amount: integer("amount").notNull(), // in cents
   status: aidStatusEnum("status").default("pending").notNull(),
@@ -370,7 +370,7 @@ export const finIncome = pgTable("fin_income", {
   sourceType: finSourceTypeEnum("source_type").notNull(),
   amount: integer("amount").notNull(), // in cents
   date: date("date").notNull(),
-  payerId: integer("payer_id").references(() => users.id), // Link to PS_PERSON/User
+  payerId: uuid("payer_id").references(() => users.id), // Link to PS_PERSON/User
   description: text("description").notNull(),
   status: feeStatusEnum("status").default("pending"),
   paymentMethod: paymentMethodEnum("payment_method"),
@@ -390,11 +390,11 @@ export const finExpenses = pgTable("fin_expenses", {
   category: finExpenseCategoryEnum("category").notNull(),
   amount: integer("amount").notNull(), // in cents
   date: date("date").notNull(),
-  payeeId: integer("payee_id").references(() => users.id),
+  payeeId: uuid("payee_id").references(() => users.id),
   payeeName: text("payee_name"), // for external vendors
   description: text("description").notNull(),
   status: finExpenseStatusEnum("status").default("pending"),
-  approvedBy: integer("approved_by").references(() => users.id),
+  approvedBy: uuid("approved_by").references(() => users.id),
   pdfAttachmentId: text("pdf_attachment_id"),
   photoAttachmentId: text("photo_attachment_id"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -439,7 +439,7 @@ export const finAuditLogs = pgTable("fin_audit_logs", {
   action: finAuditActionEnum("action").notNull(),
   entityType: text("entity_type").notNull(), // e.g., "expense", "fee"
   entityId: integer("entity_id").notNull(),
-  userId: integer("user_id").references(() => users.id),
+  userId: uuid("user_id").references(() => users.id),
   oldValue: jsonb("old_value"),
   newValue: jsonb("new_value"),
   ipAddress: text("ip_address"),
@@ -570,7 +570,7 @@ export const lmsForums = pgTable("lms_forums", {
 export const courseEnrollments = pgTable("course_enrollments", {
   id: serial("id").primaryKey(),
   courseId: integer("course_id").notNull().references(() => courses.id),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
   role: roleEnum("role").notNull().default("student"), // Can be teacher within a course
   enrolledAt: timestamp("enrolled_at").defaultNow(),
 });
@@ -578,14 +578,14 @@ export const courseEnrollments = pgTable("course_enrollments", {
 export const lmsSubmissions = pgTable("lms_submissions", {
   id: serial("id").primaryKey(),
   assignmentId: integer("assignment_id").notNull().references(() => lmsAssignments.id),
-  studentId: integer("student_id").notNull().references(() => users.id), // Using User ID for broader access
+  studentId: uuid("student_id").notNull().references(() => users.id), // Using User ID for broader access
   content: text("content"), // Online text
   fileUrl: text("file_url"),
   submittedAt: timestamp("submitted_at").defaultNow(),
   status: submissionStatusEnum("status").default("submitted"),
   grade: integer("grade"),
   feedback: text("feedback"),
-  gradedBy: integer("graded_by").references(() => users.id),
+  gradedBy: uuid("graded_by").references(() => users.id),
 });
 
 // LMS Schemas
@@ -616,6 +616,31 @@ export type InsertLmsSubmission = z.infer<typeof insertLmsSubmissionSchema>;
 export type InsertCourseEnrollment = z.infer<typeof insertCourseEnrollmentSchema>;
 
 // ========================================
+// LIBRARY MODULE
+// ========================================
+
+export const libraryBooks = pgTable("library_books", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  isbn: text("isbn").unique(),
+  title: text("title").notNull(),
+  author: text("author").notNull(),
+  subject: text("subject"),
+  coverUrl: text("cover_url"),
+  publishedDate: text("published_date"),
+  pageCount: integer("page_count"),
+  description: text("description"),
+  quantity: integer("quantity").default(1),
+  availableQuantity: integer("available_quantity").default(1),
+  location: text("location"), // e.g., "Shelf A3"
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertLibraryBookSchema = createInsertSchema(libraryBooks).omit({ id: true, createdAt: true, updatedAt: true });
+export type LibraryBook = typeof libraryBooks.$inferSelect;
+export type InsertLibraryBook = z.infer<typeof insertLibraryBookSchema>;
+
+// ========================================
 // HR HIRING MODULE TABLES
 // ========================================
 
@@ -629,7 +654,7 @@ export const jobPostings = pgTable("job_postings", {
   description: text("description").notNull(),
   requirements: text("requirements"),
   status: jobPostStatusEnum("status").default("open"),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -651,7 +676,7 @@ export const jobApplications = pgTable("job_applications", {
 // Staff Table (For HR, Finance, Admin - non-teaching)
 export const staff = pgTable("staff", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
   department: text("department"),
   designation: text("designation"),
   joinDate: date("join_date").defaultNow(),
@@ -851,7 +876,7 @@ export const fiscalPeriods = pgTable("fiscal_periods", {
   endDate: date("end_date").notNull(),
   isClosed: boolean("is_closed").default(false), // True when period is closed for posting
   closedAt: timestamp("closed_at"),
-  closedBy: integer("closed_by").references(() => users.id),
+  closedBy: uuid("closed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -866,8 +891,8 @@ export const glJournalEntries = pgTable("gl_journal_entries", {
   totalDebit: integer("total_debit").default(0).notNull(), // in cents
   totalCredit: integer("total_credit").default(0).notNull(), // in cents
   postedAt: timestamp("posted_at"),
-  postedBy: integer("posted_by").references(() => users.id),
-  createdBy: integer("created_by").notNull().references(() => users.id),
+  postedBy: uuid("posted_by").references(() => users.id),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   reversedBy: integer("reversed_by"), // Reference to reversing journal entry
   referenceType: text("reference_type"), // e.g., "AR_Payment", "AP_Invoice", "Manual"
@@ -903,9 +928,9 @@ export const glReconciliations = pgTable("gl_reconciliations", {
   statementBalance: integer("statement_balance").notNull(), // in cents, should match ending balance
   adjustments: integer("adjustments").default(0).notNull(), // Total adjustments in cents
   status: glReconciliationStatusEnum("status").default("in_progress").notNull(),
-  reconciledBy: integer("reconciled_by").notNull().references(() => users.id),
+  reconciledBy: uuid("reconciled_by").notNull().references(() => users.id),
   reconciledAt: timestamp("reconciled_at"),
-  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
   reviewedAt: timestamp("reviewed_at"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -958,7 +983,7 @@ export const arStudentBills = pgTable("ar_student_bills", {
   status: arBillStatusEnum("status").default("draft").notNull(),
   notes: text("notes"),
   glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id), // Link to GL posting
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   postedAt: timestamp("posted_at"),
 });
@@ -987,7 +1012,7 @@ export const arPayments = pgTable("ar_payments", {
   referenceNumber: text("reference_number"), // Check number, transaction ID
   notes: text("notes"),
   glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1015,7 +1040,7 @@ export const arRefunds = pgTable("ar_refunds", {
   checkNumber: text("check_number"),
   notes: text("notes"),
   glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
-  approvedBy: integer("approved_by").references(() => users.id),
+  approvedBy: uuid("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   processedAt: timestamp("processed_at"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -1031,7 +1056,7 @@ export const arDunningHistory = pgTable("ar_dunning_history", {
   amountDue: integer("amount_due").notNull(),
   dunningLevel: integer("dunning_level").default(1), // 1st reminder, 2nd, etc.
   messageTemplate: text("message_template"),
-  sentBy: integer("sent_by").references(() => users.id),
+  sentBy: uuid("sent_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1135,9 +1160,9 @@ export const apInvoices = pgTable("ap_invoices", {
   description: text("description"),
   attachmentUrl: text("attachment_url"), // Scanned invoice
   glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
-  approvedBy: integer("approved_by").references(() => users.id),
+  approvedBy: uuid("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1158,7 +1183,7 @@ export const apApprovals = pgTable("ap_approvals", {
   id: serial("id").primaryKey(),
   invoiceId: integer("invoice_id").notNull().references(() => apInvoices.id),
   approvalLevel: integer("approval_level").notNull(), // 1, 2, 3 for multi-level
-  approverId: integer("approver_id").notNull().references(() => users.id),
+  approverId: uuid("approver_id").notNull().references(() => users.id),
   status: apApprovalStatusEnum("status").default("pending"),
   comments: text("comments"),
   respondedAt: timestamp("responded_at"),
@@ -1177,7 +1202,7 @@ export const apPayments = pgTable("ap_payments", {
   status: apPaymentStatusEnum("status").default("scheduled").notNull(),
   referenceNumber: text("reference_number"), // Check number, wire confirmation
   glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1185,12 +1210,12 @@ export const apPayments = pgTable("ap_payments", {
 export const apExpenseReports = pgTable("ap_expense_reports", {
   id: serial("id").primaryKey(),
   reportNumber: text("report_number").unique().notNull(),
-  employeeId: integer("employee_id").notNull().references(() => users.id),
+  employeeId: uuid("employee_id").notNull().references(() => users.id),
   reportDate: date("report_date").notNull(),
   totalAmount: integer("total_amount").notNull(),
   status: apInvoiceStatusEnum("status").default("draft").notNull(),
   purpose: text("purpose"),
-  approvedBy: integer("approved_by").references(() => users.id),
+  approvedBy: uuid("approved_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1214,7 +1239,7 @@ export const ap1099Records = pgTable("ap_1099_records", {
   totalAmount: integer("total_amount").notNull(), // Total payments for year
   formType: text("form_type").default("1099-MISC"), // or 1099-NEC
   generatedAt: timestamp("generated_at"),
-  generatedBy: integer("generated_by").references(() => users.id),
+  generatedBy: uuid("generated_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1229,7 +1254,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   expectedDate: date("expected_date"),
   totalAmount: integer("total_amount").notNull(),
   status: text("status").default("open"), // open, partially_received, received, closed
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1290,7 +1315,7 @@ export const payrollRuns = pgTable("payroll_runs", {
   totalNet: integer("total_net").default(0),
   status: payrollStatusEnum("status").default("draft").notNull(),
   glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
-  processedBy: integer("processed_by").references(() => users.id),
+  processedBy: uuid("processed_by").references(() => users.id),
   processedAt: timestamp("processed_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -1299,7 +1324,7 @@ export const payrollRuns = pgTable("payroll_runs", {
 export const payrollDetails = pgTable("payroll_details", {
   id: serial("id").primaryKey(),
   payrollRunId: integer("payroll_run_id").notNull().references(() => payrollRuns.id),
-  employeeId: integer("employee_id").notNull().references(() => users.id),
+  employeeId: uuid("employee_id").notNull().references(() => users.id),
   employmentType: employmentTypeEnum("employment_type").notNull(),
   grossPay: integer("gross_pay").notNull(), // in cents
   federalTax: integer("federal_tax").default(0),
@@ -1318,12 +1343,12 @@ export const payrollDetails = pgTable("payroll_details", {
 // Timesheets - For hourly tracking
 export const timesheets = pgTable("timesheets", {
   id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull().references(() => users.id),
+  employeeId: uuid("employee_id").notNull().references(() => users.id),
   workDate: date("work_date").notNull(),
   hoursWorked: integer("hours_worked").notNull(), // e.g., 8.5 stored as 850 (2 decimal precision)
   overtimeHours: integer("overtime_hours").default(0),
   description: text("description"),
-  approvedBy: integer("approved_by").references(() => users.id),
+  approvedBy: uuid("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -1331,7 +1356,7 @@ export const timesheets = pgTable("timesheets", {
 // W-2 Records
 export const w2Records = pgTable("w2_records", {
   id: serial("id").primaryKey(),
-  employeeId: integer("employee_id").notNull().references(() => users.id),
+  employeeId: uuid("employee_id").notNull().references(() => users.id),
   taxYear: integer("tax_year").notNull(),
   totalWages: integer("total_wages").notNull(),
   federalTaxWithheld: integer("federal_tax_withheld").notNull(),
@@ -1341,7 +1366,7 @@ export const w2Records = pgTable("w2_records", {
   medicareTax: integer("medicare_tax").notNull(),
   pdfUrl: text("pdf_url"),
   generatedAt: timestamp("generated_at"),
-  generatedBy: integer("generated_by").references(() => users.id),
+  generatedBy: uuid("generated_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1392,7 +1417,7 @@ export const assetDisposals = pgTable("asset_disposals", {
   gainLoss: integer("gain_loss").notNull(), // proceeds - book value
   glJournalEntryId: integer("gl_journal_entry_id").references(() => glJournalEntries.id),
   notes: text("notes"),
-  disposedBy: integer("disposed_by").references(() => users.id),
+  disposedBy: uuid("disposed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -2071,7 +2096,7 @@ export const notificationPreferences = pgTable("notification_preferences", {
 // Notification Queue (Outgoing notifications)
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id), // Recipient
+  userId: uuid("user_id").notNull().references(() => users.id), // Recipient
   type: notificationTypeEnum("type").notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
