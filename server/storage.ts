@@ -1483,12 +1483,7 @@ export class DatabaseStorage implements IStorage {
   // ========================================
 
   // Chart of Accounts
-  async getChartOfAccounts(isActive?: boolean): Promise<ChartOfAccount[]> {
-    if (isActive !== undefined) {
-      return await db.select().from(chartOfAccounts).where(eq(chartOfAccounts.isActive, isActive));
-    }
-    return await db.select().from(chartOfAccounts).orderBy(chartOfAccounts.accountCode);
-  }
+
 
   async getChartOfAccount(id: number): Promise<ChartOfAccount | undefined> {
     const [account] = await db.select().from(chartOfAccounts).where(eq(chartOfAccounts.id, id));
@@ -1552,9 +1547,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Journal Entries
-  async createJournalEntry(entry: Omit<InsertGlJournalEntry, 'journalNumber'> & { journalNumber?: string }, transactions: Omit<InsertGlTransaction, 'journalEntryId'>[]): Promise<GlJournalEntry> {
-    return this.finance.createJournalEntry(entry, transactions);
-  }
+
 
   async getJournalEntries(periodId?: number, status?: string): Promise<(GlJournalEntry & { transactions: GlTransaction[] })[]> {
     let conditions = [];
@@ -1623,93 +1616,14 @@ export class DatabaseStorage implements IStorage {
 
   // GL Reports
   async getAccountBalance(accountId: number, fundId?: number, asOfDate?: string): Promise<number> {
-    let conditions = [eq(glTransactions.accountId, accountId)];
-    if (fundId) conditions.push(eq(glTransactions.fundId, fundId));
-    if (asOfDate) {
-      conditions.push(sql`${glJournalEntries.entryDate} <= ${asOfDate}`);
-    }
-
-    const [termFees] = await db.select({ total: sum(fees.amount) })
-      .from(fees)
-      .innerJoin(feeStructures, eq(fees.feeStructureId, feeStructures.id))
-      .where(and(
-        eq(fees.studentId, studentId as any),
-        eq(fees.status, 'pending'),
-        isNull(feeStructures.subjectId)
-      ));
-
-    // Get active course fees
-    const [courseFees] = await db.select({ total: sum(fees.amount) })
-      .from(fees)
-      .innerJoin(feeStructures, eq(fees.feeStructureId, feeStructures.id))
-      .where(and(
-        eq(fees.studentId, studentId as any),
-        eq(fees.status, 'pending'),
-        isNotNull(feeStructures.subjectId)
-      ));
-
-    const account = await this.getStudentAccount(studentId);
-    if (!account) return 0;
-
-    let balance = 0;
-    // Calculate simple balance based on pending fees if no complex transactions
-    // For now, return sum of pending fees
-    return (Number(termFees?.total) || 0) + (Number(courseFees?.total) || 0);
+    return this.finance.getAccountBalance(accountId, fundId, asOfDate);
   }
 
-  async getAccountBalance(entityId: number, entityType: string = 'student', asOfDate?: string): Promise<number> {
-    // 1. Get opening balance from account
-    let balance = 0;
-
-    if (entityType === 'student') {
-      const account = await this.getStudentAccount(entityId);
-      if (account) balance = Number(account.currentBalance) || 0;
-    } else {
-      // Only student accounts supported for now
-      return 0;
-    }// Given the previous mess, I will leave the implementation HERE for now if it wasn't moved, 
-    // OR (better) assuming I should move it, I will delegate if I add it to service. 
-    // But since I didn't add it to service explicitly in previous step, I will restore the original implementation 
-    // to fix the syntax error, then move it later if needed.
-    // wait, looking at my FinanceService update, I did NOT add getBalanceSheet. 
-    // So I must RESTORE the original logic for now to fix the build.
-
-    const accounts = await db.select().from(chartOfAccounts).where(eq(chartOfAccounts.isActive, true));
-
-    const assets: any[] = [];
-    const liabilities: any[] = [];
-    const equity: any[] = [];
-
-    for (const account of accounts) {
-      const balance = await this.getAccountBalance(account.id, undefined, asOfDate);
-      if (balance === 0) continue;
-
-      const item = {
-        accountCode: account.accountCode,
-        accountName: account.accountName,
-        balance
-      };
-
-      if (account.accountType === 'asset') assets.push(item);
-      else if (account.accountType === 'liability') liabilities.push(item);
-      else if (account.accountType === 'equity') equity.push(item);
-    }
-
-    const totalAssets = assets.reduce((sum, a) => sum + a.balance, 0);
-    const totalLiabilities = liabilities.reduce((sum, l) => sum + l.balance, 0);
-    const totalEquity = equity.reduce((sum, e) => sum + e.balance, 0);
-
-    return {
-      asOfDate,
-      assets,
-      liabilities,
-      equity,
-      totalAssets,
-      totalLiabilities,
-      totalEquity,
-      balanceCheck: totalAssets === (totalLiabilities + totalEquity)
-    };
+  async getBalanceSheet(asOfDate: string): Promise<any> {
+    return this.finance.getBalanceSheet(asOfDate);
   }
+
+
 
   // ========================================
   // GENERAL LEDGER (GL) MODULE IMPLEMENTATIONS
@@ -1727,9 +1641,7 @@ export class DatabaseStorage implements IStorage {
     return this.finance.getTrialBalance(fiscalPeriodId);
   }
 
-  async getCurrentFiscalPeriod(): Promise<FiscalPeriod | undefined> {
-    return this.finance.getCurrentFiscalPeriod();
-  }
+
 
   async getIncomeStatement(startDate: string, endDate: string): Promise<any> {
     // This seems to be missing in FinanceService or I missed extracting it? 
@@ -1849,46 +1761,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async postExpenseReportToGL(id: number): Promise<void> {
-    const report = await db.query.apExpenseReports.findFirst({
-      where: eq(apExpenseReports.id, id),
-      with: { items: true }
-    });
-
-    if (!report || report.status !== 'approved') {
-      throw new Error("Report not found or not approved");
-    }
-
-    const period = await this.getCurrentFiscalPeriod();
-    if (!period) throw new Error("No active fiscal period");
-
-    const journalNumber = `EXP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
-
-    // Debit expenses, Credit AP Liability (or Cash/Reimbursement Clearing)
-    const transactions: Array<{ accountId: number; transactionType: 'debit' | 'credit'; amount: number; description: string }> = (report.items as any[]).map((item: any) => ({
-      accountId: item.glAccountId || 5, // Default to generic expense if missing
-      transactionType: 'debit' as const,
-      amount: item.amount,
-      description: `Exp: ${item.description}`
-    }));
-
-    transactions.push({
-      accountId: 2, // AP Liability / Reimbursement Payable
-      transactionType: 'credit' as const,
-      amount: report.totalAmount,
-      description: `Reimbursement for ${report.reportNumber}`
-    });
-
-    await this.createJournalEntry({
-      journalNumber,
-      entryDate: new Date().toISOString().split('T')[0],
-      fiscalPeriodId: period.id,
-      description: `Expense Report ${report.reportNumber}`,
-      createdBy: report.employeeId, // or logic system user
-      referenceType: 'ap_expense_report',
-      referenceId: report.id
-    },
-      transactions
-    );
+    return this.finance.postExpenseReportToGL(id);
   }
 
 
@@ -2034,7 +1907,7 @@ export class DatabaseStorage implements IStorage {
 
   async approveApInvoice(id: number, userId: string): Promise<void> {
     await db.update(apInvoices)
-      .set({ status: 'approved', approvedBy: userId, approvedAt: new Date() })
+      .set({ status: 'approved', approvedBy: Number(userId), approvedAt: new Date() })
       .where(eq(apInvoices.id, id));
   }
 
@@ -2338,6 +2211,10 @@ export class DatabaseStorage implements IStorage {
     }
 
     return unclearedTxns;
+  }
+
+  async getAgingReport(): Promise<any[]> {
+    return this.finance.getAgingReport();
   }
 
   async getReconciliationSummary(reconciliationId: number): Promise<any> {

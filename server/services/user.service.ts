@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { users, type User, type InsertUser } from "@shared/schema";
+import { users, students, type User, type InsertUser } from "@shared/schema";
 import { eq, or } from "drizzle-orm";
 
 /**
@@ -23,13 +23,26 @@ export class UserService {
     }
 
     async getUserByIdentifier(identifier: string): Promise<User | undefined> {
+        // First try standard user fields
         const [user] = await db.select().from(users).where(
             or(
                 eq(users.email, identifier),
                 eq(users.username, identifier)
             )
         );
-        return user ? sanitizeUser(user) : undefined;
+
+        if (user) return sanitizeUser(user);
+
+        // If not found, try to find a student with this admission number
+        // We need to dynamically import students schema to avoid circular dependency if possible, 
+        // or just use the imported schema at the top level if it's safe.
+        // Checking imports... 'students' is imported from "@shared/schema".
+
+        const [student] = await db.select().from(users)
+            .innerJoin(students, eq(students.userId, users.id))
+            .where(eq(students.admissionNo, identifier));
+
+        return student ? sanitizeUser(student.users) : undefined;
     }
 
     async getUserByGoogleId(googleId: string): Promise<User | undefined> {
@@ -40,6 +53,26 @@ export class UserService {
     async createUser(user: InsertUser): Promise<User> {
         const [newUser] = await db.insert(users).values(user).returning();
         return newUser; // Ideally we verify if we need to return sanitized or raw here. internal usually needs raw, external needs sanitized. logic kept as is but sanitizedUser is available.
+    }
+
+    // Unsanitized version for internal authentication use
+    async getUserCredentials(identifier: string): Promise<User | undefined> {
+        // First try standard user fields
+        const [user] = await db.select().from(users).where(
+            or(
+                eq(users.email, identifier),
+                eq(users.username, identifier)
+            )
+        );
+
+        if (user) return user;
+
+        // If not found, try to find a student with this admission number
+        const [student] = await db.select().from(users)
+            .innerJoin(students, eq(students.userId, users.id))
+            .where(eq(students.admissionNo, identifier));
+
+        return student ? student.users : undefined;
     }
 
     async updateUserPassword(id: number, password: string): Promise<void> {

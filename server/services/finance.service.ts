@@ -238,18 +238,7 @@ export class FinanceService {
         return await db.select().from(chartOfAccounts).orderBy(chartOfAccounts.accountCode);
     }
 
-    async createJournalEntry(entry: InsertGlJournalEntry, transactions: InsertGlTransaction[]): Promise<GlJournalEntry> {
-        const [newEntry] = await db.insert(glJournalEntries).values(entry).returning();
 
-        for (const txn of transactions) {
-            await db.insert(glTransactions).values({
-                ...txn,
-                journalEntryId: newEntry.id
-            });
-        }
-
-        return newEntry;
-    }
 
     async getTrialBalance(fiscalPeriodId: number): Promise<any[]> {
         const entries = await db.select().from(glJournalEntries).where(eq(glJournalEntries.fiscalPeriodId, fiscalPeriodId));
@@ -274,6 +263,77 @@ export class FinanceService {
                 eq(fiscalPeriods.status, 'open')
             ));
         return period;
+    }
+
+    async getAccountBalance(accountId: number, fundId?: number, asOfDate?: string): Promise<number> {
+        const account = await db.query.chartOfAccounts.findFirst({
+            where: eq(chartOfAccounts.id, accountId)
+        });
+        if (!account) return 0;
+
+        const conditions = [
+            eq(glTransactions.accountId, accountId),
+            eq(glJournalEntries.status, 'posted')
+        ];
+
+        if (fundId) conditions.push(eq(glTransactions.fundId, fundId));
+        if (asOfDate) conditions.push(sql`${glJournalEntries.entryDate} <= ${asOfDate}`);
+
+        const txns = await db.select({
+            amount: glTransactions.amount,
+            type: glTransactions.transactionType
+        })
+            .from(glTransactions)
+            .innerJoin(glJournalEntries, eq(glTransactions.journalEntryId, glJournalEntries.id))
+            .where(and(...conditions));
+
+        let balance = 0;
+        for (const txn of txns) {
+            if (txn.type === account.normalBalance) {
+                balance += txn.amount;
+            } else {
+                balance -= txn.amount;
+            }
+        }
+        return balance;
+    }
+
+    async getBalanceSheet(asOfDate: string): Promise<any> {
+        const accounts = await db.select().from(chartOfAccounts).where(eq(chartOfAccounts.isActive, true));
+
+        const assets: any[] = [];
+        const liabilities: any[] = [];
+        const equity: any[] = [];
+
+        for (const account of accounts) {
+            const balance = await this.getAccountBalance(account.id, undefined, asOfDate);
+            if (balance === 0) continue;
+
+            const item = {
+                accountCode: account.accountCode,
+                accountName: account.accountName,
+                balance
+            };
+
+            if (account.accountType === 'asset') assets.push(item);
+            else if (account.accountType === 'liability') liabilities.push(item);
+            else if (account.accountType === 'equity') equity.push(item);
+        }
+
+        const totalAssets = assets.reduce((sum, a) => sum + a.balance, 0);
+        const totalLiabilities = liabilities.reduce((sum, l) => sum + l.balance, 0);
+        const totalEquity = equity.reduce((sum, e) => sum + e.balance, 0);
+
+        return {
+            asOfDate,
+            assets,
+            liabilities,
+            equity,
+            totalAssets,
+            totalLiabilities,
+            totalEquity,
+            balanceCheck: totalAssets === (totalLiabilities + totalEquity)
+        };
     }
 
     async getIncomeStatement(startDate: string, endDate: string): Promise<any> {
@@ -555,6 +615,157 @@ export class FinanceService {
         return await query.orderBy(desc(expenses.expenseDate));
     }
 
+    async postExpenseReportToGL(id: number): Promise<void> {
+        return await db.transaction(async (tx) => {
+            const report = await tx.query.apExpenseReports.findFirst({
+                where: eq(apExpenseReports.id, id),
+                with: { items: true }
+            });
+
+            if (!report || report.status !== 'approved') {
+                throw new Error("Report not found or not approved");
+            }
+
+            // Ideally inject this or fetch within tx, but for now simple fetch is okay if we trust it exists.
+            // But strict transaction safety suggests fetching state within transaction.
+            const today = new Date().toISOString().split('T')[0];
+            const [period] = await tx.select().from(fiscalPeriods)
+                .where(and(
+                    // @ts-ignore
+                    sql`${fiscalPeriods.startDate} <= ${today}`,
+                    // @ts-ignore
+                    sql`${fiscalPeriods.endDate} >= ${today}`,
+                    eq(fiscalPeriods.status, 'open')
+                ));
+
+            if (!period) throw new Error("No active fiscal period");
+
+            const journalNumber = `EXP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+
+            // Debit expenses, Credit AP Liability (or Cash/Reimbursement Clearing)
+            const transactions: Array<{ accountId: number; transactionType: 'debit' | 'credit'; amount: number; description: string }> = (report.items as any[]).map((item: any) => ({
+                accountId: item.glAccountId || 5, // Default to generic expense if missing
+                transactionType: 'debit' as const,
+                amount: item.amount,
+                description: `Exp: ${item.description}`
+            }));
+
+            transactions.push({
+                accountId: 2, // AP Liability / Reimbursement Payable
+                transactionType: 'credit' as const,
+                amount: report.totalAmount,
+                description: `Reimbursement for ${report.reportNumber}`
+            });
+
+            // Create Journal Entry inline to use `tx`
+            // Cannot use this.createJournalEntry if it doesn't support passing `tx`.
+            // So we duplicate logic or update createJournalEntry to accept tx?
+            // Duplicating for transaction safety inside this block is safer/easier for now.
+
+            // Validate double-entry
+            const totalDebit = transactions.filter(t => t.transactionType === 'debit').reduce((s, t) => s + t.amount, 0);
+            const totalCredit = transactions.filter(t => t.transactionType === 'credit').reduce((s, t) => s + t.amount, 0);
+            if (totalDebit !== totalCredit) throw new Error(`Double-entry validation failed: ${totalDebit} != ${totalCredit}`);
+
+            const [journalEntry] = await tx.insert(glJournalEntries).values({
+                entryDate: today,
+                fiscalPeriodId: period.id,
+                description: `Expense Report ${report.reportNumber}`,
+                createdBy: report.employeeId,
+                referenceType: 'ap_expense_report',
+                referenceId: report.id,
+                journalNumber,
+                totalDebit,
+                totalCredit,
+                status: 'posted',
+                postedAt: new Date(),
+                postedBy: report.employeeId // Auto-post
+            }).returning();
+
+            for (const txn of transactions) {
+                await tx.insert(glTransactions).values({
+                    ...txn,
+                    journalEntryId: journalEntry.id
+                });
+            }
+
+            await tx.update(apExpenseReports)
+                .set({ status: 'processed' }) // Mark as processed/posted
+                .where(eq(apExpenseReports.id, id));
+        });
+    }
+
+    async createJournalEntry(entry: Omit<InsertGlJournalEntry, 'journalNumber'> & { journalNumber?: string }, transactions: Omit<InsertGlTransaction, 'journalEntryId'>[]): Promise<GlJournalEntry> {
+        const journalNumber = entry.journalNumber || `JE-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+
+        return await db.transaction(async (tx) => {
+            const [journalEntry] = await tx.insert(glJournalEntries).values({
+                ...entry,
+                journalNumber
+            }).returning();
+
+            for (const txn of transactions) {
+                await tx.insert(glTransactions).values({
+                    ...txn,
+                    journalEntryId: journalEntry.id
+                });
+            }
+
+            return journalEntry;
+        });
+    }
+
+    // ========================================
+    // AR Reporting
+    // ========================================
+
+    async getAgingReport(): Promise<{
+        billNumber: string;
+        studentName: string;
+        billDate: string;
+        dueDate: string;
+        totalAmount: number;
+        balanceDue: number;
+        daysOverdue: number;
+        agingBucket: string;
+    }[]> {
+        const bills = await db.select().from(arStudentBills)
+            .where(and(
+                eq(arStudentBills.status, 'open'),
+                sql`${arStudentBills.balanceDue} > 0`
+            ));
+
+        const today = new Date();
+        const aging = [];
+
+        for (const bill of bills) {
+            const dueDate = new Date(bill.dueDate);
+            const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+
+            // We need student name. Use a simple lookup or join if performance needed.
+            const [student] = await db.select({ name: users.name })
+                .from(students)
+                .innerJoin(users, eq(students.userId, users.id))
+                .where(eq(students.id, bill.studentId));
+
+            aging.push({
+                billNumber: bill.billNumber,
+                studentName: student?.name || 'Unknown',
+                billDate: bill.billDate,
+                dueDate: bill.dueDate,
+                totalAmount: bill.totalAmount,
+                balanceDue: bill.balanceDue,
+                daysOverdue,
+                agingBucket: daysOverdue <= 0 ? 'Current' :
+                    daysOverdue <= 30 ? '1-30 days' :
+                        daysOverdue <= 60 ? '31-60 days' :
+                            daysOverdue <= 90 ? '61-90 days' : '90+ days'
+            });
+        }
+
+        return aging;
+    }
+
     // ========================================
     // SCHOLARSHIPS & FINANCIAL AID
     // ========================================
@@ -628,7 +839,7 @@ export class FinanceService {
     }
 
     async getPayrollRuns(): Promise<PayrollRun[]> {
-        return await db.select().from(payrollRuns).orderBy(desc(payrollRuns.periodEnd));
+        return await db.select().from(payrollRuns).orderBy(desc(payrollRuns.payPeriodEnd));
     }
 
     async addPayrollDetail(detail: InsertPayrollDetail): Promise<PayrollDetail> {

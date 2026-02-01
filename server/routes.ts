@@ -239,8 +239,8 @@ export async function registerRoutes(
   // --- Auth --- (with rate limiting to prevent brute-force attacks)
   app.post(api.auth.login.path, authRateLimiter, async (req, res) => {
     const { username, password } = req.body;
-    // support login via username (ID) or email
-    const user = await storage.getUserByIdentifier(username);
+    // support login via username (ID) or email. Use credentials method to get password hash.
+    const user = await storage.users.getUserCredentials(username);
 
     if (!user || !user.password || !(await comparePassword(password, user.password))) {
       return res.status(401).json({ message: "Invalid credentials" });
@@ -253,7 +253,9 @@ export async function registerRoutes(
       { expiresIn: '8h' }
     );
 
-    res.json({ token, user });
+    // Sanitize before returning
+    const { password: _, ...safeUser } = user;
+    res.json({ token, user: safeUser });
   });
 
   const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -287,11 +289,11 @@ export async function registerRoutes(
       }
 
       // Ensure we trust the email
-      let user = await storage.getUserByGoogleId(googleId);
+      let user = await storage.users.getUserByGoogleId(googleId);
 
       if (!user) {
         // If no user linked to Google, check by email
-        user = await storage.getUserByIdentifier(email);
+        user = await storage.users.getUserByIdentifier(email);
 
         if (user) {
           // Link existing account to Google
@@ -319,7 +321,7 @@ export async function registerRoutes(
   app.post("/api/auth/change-password", authRateLimiter, authenticateToken, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     const userId = (req as any).user.id;
-    const user = await storage.getUser(userId);
+    const user = await storage.users.getUser(userId);
 
     if (!user) return res.sendStatus(404);
 
@@ -330,14 +332,14 @@ export async function registerRoutes(
 
     // Hash and save new password
     const hashedPassword = await hashPassword(newPassword);
-    await storage.updateUserPassword(userId, hashedPassword);
+    await storage.users.updateUserPassword(userId, hashedPassword);
 
     res.json({ message: "Password updated successfully" });
   });
 
   app.get(api.auth.me.path, authenticateToken, async (req, res) => {
     const userId = (req as any).user.id;
-    const user = await storage.getUser(Number(userId));
+    const user = await storage.users.getUser(Number(userId));
     if (!user) return res.sendStatus(404);
     const { password: _, ...userWithoutPassword } = user;
     res.json(userWithoutPassword);
@@ -353,7 +355,7 @@ export async function registerRoutes(
     }
 
     const { userId } = req.body;
-    const targetUser = await storage.getUser(Number(userId));
+    const targetUser = await storage.users.getUser(Number(userId));
 
     if (!targetUser) {
       return res.status(404).json({ message: "Target user not found" });
@@ -396,7 +398,7 @@ export async function registerRoutes(
       }
 
       input.password = await hashPassword(input.password);
-      const user = await storage.createUser(input);
+      const user = await storage.users.createUser(input);
       res.status(201).json(user);
     } catch (e: any) {
       if (e.message?.includes("already exists")) {
@@ -457,7 +459,8 @@ export async function registerRoutes(
       const { user: userData, paymentSetup, ...studentDetails } = req.body;
 
       // Check for existing username
-      const existingUser = await storage.getUserByUsername(userData.username);
+      // Check for existing username
+      const existingUser = await storage.users.getUserByUsername(userData.username);
       if (existingUser) {
         return res.status(409).json({ message: "Username already exists" });
       }
@@ -465,14 +468,14 @@ export async function registerRoutes(
       const tempPassword = generateTemporaryPassword();
       const hashedPassword = await hashPassword(tempPassword);
 
-      const newUser = await storage.createUser({
+      const newUser = await storage.users.createUser({
         ...userData,
         password: hashedPassword,
         role: 'student',
         mustChangePassword: true
       });
 
-      const newStudent = await storage.createStudent({
+      const newStudent = await storage.academic.createStudent({
         ...studentDetails,
         userId: newUser.id
       });
@@ -1337,7 +1340,7 @@ export async function registerRoutes(
       const income = await storage.createFinIncome(req.body, user.id);
       res.status(201).json(income);
     } catch (e: any) {
-      res.status(400).json({ message: e.message || "Error creating income record" });
+      res.status(400).json({ message: "Error creating income record" });
     }
   });
 
@@ -1538,18 +1541,14 @@ export async function registerRoutes(
 
   // Chart of Accounts
   app.get("/api/gl/chart-of-accounts", authenticateToken, requireFinanceAccess, async (req, res) => {
-    try {
-      const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
-      const accounts = await storage.getChartOfAccounts(isActive);
-      res.json(accounts);
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
+    const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+    const accounts = await storage.finance.getChartOfAccounts(isActive);
+    res.json(accounts);
   });
 
   app.post("/api/gl/chart-of-accounts", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const account = await storage.createChartOfAccount(req.body);
+      const account = await storage.finance.createChartOfAccount(req.body);
       res.status(201).json(account);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1578,7 +1577,7 @@ export async function registerRoutes(
 
   app.post("/api/gl/funds", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const fund = await storage.createGlFund(req.body);
+      const fund = await storage.finance.createGlFund(req.body);
       res.status(201).json(fund);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1589,7 +1588,7 @@ export async function registerRoutes(
   app.get("/api/gl/fiscal-periods", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const year = req.query.year ? Number(req.query.year) : undefined;
-      const periods = await storage.getFiscalPeriods(year);
+      const periods = await storage.finance.getFiscalPeriods(year);
       res.json(periods);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1598,8 +1597,9 @@ export async function registerRoutes(
 
   app.get("/api/gl/fiscal-periods/current", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const period = await storage.getCurrentFiscalPeriod();
-      res.json(period || null);
+      const period = await storage.finance.getCurrentFiscalPeriod();
+      if (!period) return res.status(404).json({ message: "No active fiscal period" });
+      res.json(period);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -1607,7 +1607,7 @@ export async function registerRoutes(
 
   app.post("/api/gl/fiscal-periods", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const period = await storage.createFiscalPeriod(req.body);
+      const period = await storage.finance.createFiscalPeriod(req.body);
       res.status(201).json(period);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1616,7 +1616,7 @@ export async function registerRoutes(
 
   app.post("/api/gl/fiscal-periods/:id/close", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.closeFiscalPeriod(Number((req.params.id as string)), (req as any).user.id);
+      await storage.finance.closeFiscalPeriod(Number((req.params.id as string)), (req as any).user.id);
       res.json({ message: "Fiscal period closed successfully" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1628,7 +1628,7 @@ export async function registerRoutes(
     try {
       const periodId = req.query.periodId ? Number(req.query.periodId) : undefined;
       const status = req.query.status as string | undefined;
-      const entries = await storage.getJournalEntries(periodId, status);
+      const entries = await storage.finance.getJournalEntries(periodId, status);
       res.json(entries);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1637,8 +1637,8 @@ export async function registerRoutes(
 
   app.get("/api/gl/journal-entries/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const entry = await storage.getJournalEntry(Number((req.params.id as string)));
-      if (!entry) return res.status(404).json({ message: "Journal entry not found" });
+      const entry = await storage.finance.getJournalEntry(Number(req.params.id));
+      if (!entry) return res.status(404).json({ message: "Entry not found" });
       res.json(entry);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1648,7 +1648,7 @@ export async function registerRoutes(
   app.post("/api/gl/journal-entries", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const { entry, transactions } = req.body;
-      const journalEntry = await storage.createJournalEntry({
+      const journalEntry = await storage.finance.createJournalEntry({
         ...entry,
         createdBy: (req as any).user.id
       }, transactions);
@@ -1660,7 +1660,7 @@ export async function registerRoutes(
 
   app.post("/api/gl/journal-entries/:id/post", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.postJournalEntry(Number((req.params.id as string)), (req as any).user.id);
+      await storage.finance.postJournalEntry(Number(req.params.id), (req as any).user.id);
       res.json({ message: "Journal entry posted successfully" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1682,7 +1682,7 @@ export async function registerRoutes(
     try {
       const periodId = Number(req.query.periodId);
       if (!periodId) return res.status(400).json({ message: "periodId is required" });
-      const trialBalance = await storage.getTrialBalance(periodId);
+      const trialBalance = await storage.finance.getTrialBalance(periodId);
       res.json(trialBalance);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1692,7 +1692,7 @@ export async function registerRoutes(
   app.get("/api/gl/reports/balance-sheet", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const asOfDate = req.query.asOfDate as string || new Date().toISOString().split('T')[0];
-      const balanceSheet = await storage.getBalanceSheet(asOfDate);
+      const balanceSheet = await storage.finance.getBalanceSheet(asOfDate);
       res.json(balanceSheet);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1706,7 +1706,7 @@ export async function registerRoutes(
       if (!startDate || !endDate) {
         return res.status(400).json({ message: "startDate and endDate are required" });
       }
-      const incomeStatement = await storage.getIncomeStatement(startDate, endDate);
+      const incomeStatement = await storage.finance.getIncomeStatement(startDate, endDate);
       res.json(incomeStatement);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1721,7 +1721,7 @@ export async function registerRoutes(
     try {
       const accountId = req.query.accountId ? Number(req.query.accountId) : undefined;
       const status = req.query.status as string | undefined;
-      const reconciliations = await storage.getReconciliations(accountId, status);
+      const reconciliations = await storage.finance.getReconciliations(accountId, status);
       res.json(reconciliations);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1729,76 +1729,44 @@ export async function registerRoutes(
   });
 
   app.get("/api/gl/reconciliations/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
-    try {
-      const id = parseInt((req.params.id as string));
-      const reconciliation = await storage.getReconciliation(id);
-      res.json(reconciliation);
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
+    const recon = await storage.finance.getReconciliation(Number(req.params.id));
+    if (!recon) return res.status(404).json({ message: "Reconciliation not found" });
+    res.json(recon);
   });
 
   app.post("/api/gl/reconciliations", authenticateToken, requireFinanceAccess, async (req, res) => {
-    try {
-      const data = { ...req.body, reconciledBy: (req as any).user!.id };
-      const reconciliation = await storage.createReconciliation(data);
-      res.status(201).json(reconciliation);
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
+    const recon = await storage.finance.createReconciliation(req.body);
+    res.status(201).json(recon);
   });
 
   app.put("/api/gl/reconciliations/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
-    try {
-      const id = parseInt((req.params.id as string));
-      const reconciliation = await storage.updateReconciliation(id, req.body);
-      res.json(reconciliation);
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
+    const recon = await storage.finance.updateReconciliation(Number(req.params.id), req.body);
+    res.json(recon);
   });
 
   app.post("/api/gl/reconciliations/:id/complete", authenticateToken, requireFinanceAccess, async (req, res) => {
-    try {
-      const id = parseInt((req.params.id as string));
-      const reconciliation = await storage.completeReconciliation(id, (req as any).user!.id);
-      res.json(reconciliation);
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
+    const recon = await storage.finance.completeReconciliation(Number(req.params.id), (req as any).user.id);
+    res.json(recon);
   });
 
   app.get("/api/gl/reconciliations/:id/summary", authenticateToken, requireFinanceAccess, async (req, res) => {
-    try {
-      const id = parseInt((req.params.id as string));
-      const summary = await storage.getReconciliationSummary(id);
-      res.json(summary);
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
+    const summary = await storage.finance.getReconciliationSummary(Number(req.params.id));
+    res.json(summary);
   });
 
   app.post("/api/gl/reconciliations/:reconId/items/:txnId/toggle", authenticateToken, requireFinanceAccess, async (req, res) => {
-    try {
-      const reconciliationId = parseInt((req.params.reconId as string));
-      const transactionId = parseInt((req.params.txnId as string));
-      const { isCleared } = req.body;
-      const item = await storage.markTransactionCleared(reconciliationId, transactionId, isCleared);
-      res.json(item);
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
+    const item = await storage.finance.markTransactionCleared(
+      Number(req.params.reconId),
+      Number(req.params.txnId),
+      req.body.isCleared,
+      req.body.clearedDate
+    );
+    res.json(item);
   });
 
   app.get("/api/gl/accounts/:accountId/uncleared", authenticateToken, requireFinanceAccess, async (req, res) => {
-    try {
-      const accountId = parseInt(req.params.accountId as string);
-      const asOfDate = (Array.isArray(req.query.asOfDate) ? req.query.asOfDate[0] : req.query.asOfDate) as string || new Date().toISOString().split('T')[0];
-      const transactions = await storage.getUnclearedTransactions(accountId, asOfDate);
-      res.json(transactions);
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
+    const transactions = await storage.finance.getUnclearedTransactions(Number(req.params.accountId), req.query.asOfDate as string);
+    res.json(transactions);
   });
 
 
@@ -1806,7 +1774,7 @@ export async function registerRoutes(
   // ACCOUNTS RECEIVABLE (AR) API ROUTES
   // ========================================
 
-  app.get("/api/ar/bills", authenticateToken, requireFinanceAccess, async (req, res) => {
+  app.get("/api/ar/student-bills", authenticateToken, requireFinanceAccess, async (req, res) => {
     let studentId = req.query.studentId ? String(req.query.studentId) : undefined;
     const user = (req as any).user;
 
@@ -1819,7 +1787,7 @@ export async function registerRoutes(
 
     const status = req.query.status as string | undefined;
     try {
-      const bills = await storage.getStudentBills(studentId, status);
+      const bills = await storage.finance.getStudentBills(studentId, status);
       res.json(bills);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1828,7 +1796,7 @@ export async function registerRoutes(
 
   app.get("/api/ar/bills/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const bill = await storage.getStudentBill(Number((req.params.id as string)));
+      const bill = await storage.finance.getStudentBill(Number((req.params.id as string)));
       if (!bill) return res.status(404).json({ message: "Bill not found" });
 
       // IDOR PROTECTION: Check ownership
@@ -1849,7 +1817,7 @@ export async function registerRoutes(
   app.post("/api/ar/bills", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const { bill, lineItems } = req.body;
-      const newBill = await storage.createStudentBill({
+      const newBill = await storage.finance.createStudentBill({
         ...bill,
         createdBy: (req as any).user.id
       }, lineItems);
@@ -1859,13 +1827,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ar/bills/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
-    try {
-      await storage.postStudentBillToGL(Number((req.params.id as string)));
-      res.json({ message: "Bill posted to GL successfully" });
-    } catch (e: any) {
-      res.status(400).json({ message: e.message });
-    }
+  app.post("/api/ar/student-bills/:id/post", authenticateToken, requireFinanceAccess, async (req, res) => {
+    await storage.finance.postStudentBillToGL(Number(req.params.id));
+    res.json({ message: "Bill posted to GL" });
   });
 
   // AR Refunds
@@ -1873,7 +1837,7 @@ export async function registerRoutes(
     const status = req.query.status as string | undefined;
     const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
     try {
-      const refunds = await storage.getRefundRequests(status, studentId);
+      const refunds = await storage.finance.getRefundRequests(status, studentId);
       res.json(refunds);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1882,7 +1846,7 @@ export async function registerRoutes(
 
   app.post("/api/ar/refunds", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const refund = await storage.createRefundRequest(req.body);
+      const refund = await storage.finance.createRefundRequest(req.body);
       res.status(201).json(refund);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1891,7 +1855,7 @@ export async function registerRoutes(
 
   app.post("/api/ar/refunds/:id/approve", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const refund = await storage.approveRefund(Number((req.params.id as string)), (req as any).user.id);
+      const refund = await storage.finance.approveRefund(Number((req.params.id as string)), (req as any).user.id);
       res.json(refund);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1901,7 +1865,7 @@ export async function registerRoutes(
   app.post("/api/ar/refunds/:id/reject", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const { reason } = req.body;
-      const refund = await storage.rejectRefund(Number((req.params.id as string)), (req as any).user.id, reason);
+      const refund = await storage.finance.rejectRefund(Number((req.params.id as string)), (req as any).user.id, reason);
       res.json(refund);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1911,7 +1875,7 @@ export async function registerRoutes(
   app.post("/api/ar/refunds/:id/process", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const { checkNumber } = req.body;
-      const refund = await storage.processRefund(Number((req.params.id as string)), checkNumber);
+      const refund = await storage.finance.processRefund(Number((req.params.id as string)), checkNumber);
       res.json(refund);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1920,7 +1884,7 @@ export async function registerRoutes(
 
   app.post("/api/ar/refunds/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.postRefundToGL(Number((req.params.id as string)));
+      await storage.finance.postRefundToGL(Number((req.params.id as string)));
       res.json({ message: "Refund posted to GL successfully" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1930,14 +1894,14 @@ export async function registerRoutes(
   // AR Auto-Billing Routes
   app.get("/api/ar/billing-rules", authenticateToken, requireFinanceAccess, async (req, res) => {
     const periodId = req.query.periodId ? parseInt(req.query.periodId as string) : undefined;
-    const rules = await storage.getAutoBillRules(periodId);
+    const rules = await storage.finance.getAutoBillRules(periodId);
     res.json(rules);
   });
 
   app.post("/api/ar/billing-rules", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const data = insertArAutoBillRuleSchema.parse(req.body);
-      const rule = await storage.createAutoBillRule(data);
+      const rule = await storage.finance.createAutoBillRule(data);
       res.status(201).json(rule);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1949,7 +1913,7 @@ export async function registerRoutes(
       const studentId = req.params.studentId as string;
       if (!req.body.enrollmentId) return res.status(400).send("Missing enrollmentId");
 
-      const bills = await storage.generateBillsFromEnrollment(studentId, req.body.enrollmentId);
+      const bills = await storage.finance.generateBillsFromEnrollment(studentId, req.body.enrollmentId);
       res.json(bills);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -2098,7 +2062,7 @@ export async function registerRoutes(
   app.get("/api/ar/dunning/overdue-bills", authenticateToken, requireFinanceAccess, async (req, res) => {
     const daysOverdue = req.query.daysOverdue ? Number(req.query.daysOverdue) : undefined;
     try {
-      const bills = await storage.getOverdueBills(daysOverdue);
+      const bills = await storage.finance.getOverdueBills(daysOverdue);
       res.json(bills);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -2108,7 +2072,7 @@ export async function registerRoutes(
   app.post("/api/ar/dunning/send-notice", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const { studentId, billId, level } = req.body;
-      const notice = await storage.sendDunningNotice(studentId, billId, level);
+      const notice = await storage.finance.sendDunningNotice(studentId, billId, level);
       res.json(notice);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -2119,7 +2083,7 @@ export async function registerRoutes(
     const studentId = req.query.studentId ? String(req.query.studentId) : undefined;
     const billId = req.query.billId ? Number(req.query.billId) : undefined;
     try {
-      const history = await storage.getDunningHistory(studentId, billId);
+      const history = await storage.finance.getDunningHistory(studentId, billId);
       res.json(history);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -2138,7 +2102,7 @@ export async function registerRoutes(
     }
 
     try {
-      const payments = await storage.getArPayments(studentId);
+      const payments = await storage.finance.getArPayments(studentId);
       res.json(payments);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -2148,7 +2112,7 @@ export async function registerRoutes(
   app.post("/api/ar/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const { payment, allocations } = req.body;
-      const newPayment = await storage.createArPayment({
+      const newPayment = await storage.finance.createArPayment({
         ...payment,
         createdBy: (req as any).user.id
       }, allocations);
@@ -2160,7 +2124,7 @@ export async function registerRoutes(
 
   app.post("/api/ar/payments/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.postArPaymentToGL(Number((req.params.id as string)));
+      await storage.finance.postArPaymentToGL(Number((req.params.id as string)));
       res.json({ message: "Payment posted to GL successfully" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -2169,7 +2133,7 @@ export async function registerRoutes(
 
   app.get("/api/ar/reports/aging", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const aging = await storage.getAgingReport();
+      const aging = await storage.finance.getAgingReport();
       res.json(aging);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -2181,9 +2145,9 @@ export async function registerRoutes(
   // ========================================
 
   app.get("/api/ap/vendors", authenticateToken, requireFinanceAccess, async (req, res) => {
+    const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
     try {
-      const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
-      const vendors = await storage.getApVendors(isActive);
+      const vendors = await storage.finance.getApVendors(isActive);
       res.json(vendors);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -2192,7 +2156,7 @@ export async function registerRoutes(
 
   app.post("/api/ap/vendors", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const vendor = await storage.createApVendor(req.body);
+      const vendor = await storage.finance.createApVendor(req.body);
       res.status(201).json(vendor);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -2200,10 +2164,10 @@ export async function registerRoutes(
   });
 
   app.get("/api/ap/invoices", authenticateToken, requireFinanceAccess, async (req, res) => {
+    const vendorId = req.query.vendorId ? Number(req.query.vendorId) : undefined;
+    const status = req.query.status as string;
     try {
-      const vendorId = req.query.vendorId ? Number(req.query.vendorId) : undefined;
-      const status = req.query.status as string | undefined;
-      const invoices = await storage.getApInvoices(vendorId, status);
+      const invoices = await storage.finance.getApInvoices(vendorId, status);
       res.json(invoices);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -2213,7 +2177,7 @@ export async function registerRoutes(
   app.post("/api/ap/invoices", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const { invoice, lineItems } = req.body;
-      const newInvoice = await storage.createApInvoice({
+      const newInvoice = await storage.finance.createApInvoice({
         ...invoice,
         createdBy: (req as any).user.id
       }, lineItems);
@@ -2225,8 +2189,8 @@ export async function registerRoutes(
 
   app.post("/api/ap/invoices/:id/approve", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.approveApInvoice(Number((req.params.id as string)), (req as any).user.id);
-      res.json({ message: "Invoice approved successfully" });
+      await storage.finance.approveApInvoice(Number((req.params.id as string)), (req as any).user.id);
+      res.json({ message: "Invoice approved" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
     }
@@ -2234,8 +2198,8 @@ export async function registerRoutes(
 
   app.post("/api/ap/invoices/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.postApInvoiceToGL(Number((req.params.id as string)));
-      res.json({ message: "Invoice posted to GL successfully" });
+      await storage.finance.postApInvoiceToGL(Number((req.params.id as string)));
+      res.json({ message: "Invoice posted to GL" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
     }
@@ -2243,7 +2207,7 @@ export async function registerRoutes(
 
   app.post("/api/ap/payments", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const payment = await storage.createApPayment({
+      const payment = await storage.finance.createApPayment({
         ...req.body,
         createdBy: (req as any).user.id
       });
@@ -2255,8 +2219,8 @@ export async function registerRoutes(
 
   app.post("/api/ap/payments/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.postApPaymentToGL(Number((req.params.id as string)));
-      res.json({ message: "Payment posted to GL successfully" });
+      await storage.finance.postApPaymentToGL(Number((req.params.id as string)));
+      res.json({ message: "Payment posted to GL" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
     }
@@ -3276,7 +3240,7 @@ async function seedDatabase() {
       role: "admin"
     });
     console.log("Seeding complete.");
-  } else if (!adminUser.password.includes(".") || adminUser.password.startsWith("$")) {
+  } else if (adminUser.password && (!adminUser.password.includes(".") || adminUser.password.startsWith("$"))) {
     console.log("Updating legacy admin password...");
     const adminPass = await hashPassword("admin123");
     await storage.updateUserPassword(adminUser.id, adminPass);
