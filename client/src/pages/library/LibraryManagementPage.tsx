@@ -181,6 +181,33 @@ export default function LibraryManagementPage() {
         },
     });
 
+    // Borrow book mutation (FREE FOR ALL users)
+    const borrowMutation = useMutation({
+        mutationFn: (itemId: number) => fetchWithAuth("/api/library/borrow", {
+            method: "POST",
+            body: JSON.stringify({ itemId }),
+        }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/library/items"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/library/my-loans"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/library/loans"] });
+            setSelectedBook(null);
+            toast({
+                title: "Book Borrowed!",
+                description: "You have successfully borrowed this book. Return it within 14 days."
+            });
+        },
+        onError: (error: Error) => {
+            toast({ title: "Cannot Borrow", description: error.message, variant: "destructive" });
+        },
+    });
+
+    // Fetch user's own loans
+    const { data: myLoans = [] } = useQuery<LibraryLoan[]>({
+        queryKey: ["/api/library/my-loans"],
+        queryFn: () => fetchWithAuth("/api/library/my-loans?active=true"),
+    });
+
     // Extract unique categories
     const categories = useMemo(() => {
         const cats = new Set(mappedItems.map(i => i.category).filter(Boolean));
@@ -543,9 +570,13 @@ export default function LibraryManagementPage() {
                                     <BookOpen className="h-4 w-4 mr-2" />
                                     Book Catalog
                                 </TabsTrigger>
+                                <TabsTrigger value="my-loans" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 data-[state=active]:shadow-sm rounded-md px-6 text-gray-600">
+                                    <BookMarked className="h-4 w-4 mr-2" />
+                                    My Loans {myLoans.length > 0 && <Badge className="ml-2 bg-emerald-500 text-white">{myLoans.length}</Badge>}
+                                </TabsTrigger>
                                 <TabsTrigger value="loans" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 data-[state=active]:shadow-sm rounded-md px-6 text-gray-600">
                                     <Clock className="h-4 w-4 mr-2" />
-                                    Active Loans
+                                    All Loans
                                 </TabsTrigger>
                             </TabsList>
 
@@ -791,6 +822,81 @@ export default function LibraryManagementPage() {
                             )}
                         </TabsContent>
 
+                        {/* My Loans Tab - User's Own Borrowed Books */}
+                        <TabsContent value="my-loans" className="space-y-4 mt-0">
+                            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                                {myLoans.length > 0 ? (
+                                    <div className="divide-y divide-gray-100">
+                                        {myLoans.map((loan) => {
+                                            const book = items.find(b => b.id === loan.itemId);
+                                            const isOverdue = new Date(loan.dueDate) < new Date() && loan.status === 'active';
+                                            const daysLeft = Math.ceil((new Date(loan.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+
+                                            return (
+                                                <div key={loan.id} className="p-4 flex items-center gap-4 hover:bg-gray-50">
+                                                    {/* Book Cover */}
+                                                    <div className="w-16 h-24 rounded-lg overflow-hidden bg-gray-100 shrink-0 shadow">
+                                                        {book?.coverUrl ? (
+                                                            <img src={book.coverUrl} alt={book.title} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center">
+                                                                <BookOpen className="h-6 w-6 text-gray-400" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Book Info */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <h4 className="font-semibold text-gray-900 truncate">{book?.title || `Book #${loan.itemId}`}</h4>
+                                                        <p className="text-sm text-gray-500">{book?.author || "Unknown Author"}</p>
+                                                        <div className="flex items-center gap-4 mt-2 text-sm">
+                                                            <span className="text-gray-600">
+                                                                Borrowed: {new Date(loan.checkoutDate).toLocaleDateString()}
+                                                            </span>
+                                                            <span className={isOverdue ? "text-red-600 font-medium" : "text-gray-600"}>
+                                                                Due: {new Date(loan.dueDate).toLocaleDateString()}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Status Badge */}
+                                                    <div className="text-right">
+                                                        {isOverdue ? (
+                                                            <Badge className="bg-red-100 text-red-700 border-red-200">
+                                                                Overdue
+                                                            </Badge>
+                                                        ) : (
+                                                            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+                                                                {daysLeft} days left
+                                                            </Badge>
+                                                        )}
+                                                        {loan.fineAmount > 0 && (
+                                                            <p className="text-sm text-red-600 mt-1">Fine: ${(loan.fineAmount / 100).toFixed(2)}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                                        <div className="p-6 rounded-full bg-gray-100 mb-4">
+                                            <BookMarked className="h-12 w-12 text-gray-300" />
+                                        </div>
+                                        <p className="text-lg font-medium text-gray-700">No borrowed books</p>
+                                        <p className="text-sm mt-1 text-gray-500">Browse the catalog and borrow books for free!</p>
+                                        <Button
+                                            className="mt-4 bg-emerald-600 hover:bg-emerald-700"
+                                            onClick={() => document.querySelector('[value="catalog"]')?.click()}
+                                        >
+                                            <BookOpen className="h-4 w-4 mr-2" />
+                                            Browse Catalog
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+                        </TabsContent>
+
                         <TabsContent value="loans" className="space-y-4 mt-0">
                             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                                 <Table>
@@ -943,17 +1049,20 @@ export default function LibraryManagementPage() {
                                         {selectedBook.availableCopies > 0 ? (
                                             <Button
                                                 className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                                onClick={() => {
-                                                    setSelectedBook(null);
-                                                    setCheckoutOpen(true);
-                                                    toast({
-                                                        title: "Request to Borrow",
-                                                        description: `To borrow "${selectedBook.title}", please use the Checkout feature.`
-                                                    });
-                                                }}
+                                                disabled={borrowMutation.isPending}
+                                                onClick={() => borrowMutation.mutate(selectedBook.id)}
                                             >
-                                                <BookMarked className="h-4 w-4 mr-2" />
-                                                Borrow This Book
+                                                {borrowMutation.isPending ? (
+                                                    <>
+                                                        <Clock className="h-4 w-4 mr-2 animate-spin" />
+                                                        Borrowing...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <BookMarked className="h-4 w-4 mr-2" />
+                                                        Borrow Now (Free)
+                                                    </>
+                                                )}
                                             </Button>
                                         ) : (
                                             <Button className="flex-1" variant="outline" disabled>

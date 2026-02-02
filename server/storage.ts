@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { AcademicService } from "./services/academic.service";
 import { UserService } from "./services/user.service";
+import { LibraryService } from "./services/library.service";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db";
@@ -607,6 +608,7 @@ export class DatabaseStorage implements IStorage {
   public users: UserService;
   public academic: AcademicService;
   public finance: FinanceService;
+  public library: LibraryService;
 
   constructor() {
     this.sessionStore = new PostgresSessionStore({
@@ -616,6 +618,7 @@ export class DatabaseStorage implements IStorage {
     this.users = new UserService();
     this.academic = new AcademicService();
     this.finance = new FinanceService();
+    this.library = new LibraryService();
   }
 
   // Academic Periods

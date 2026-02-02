@@ -1274,11 +1274,29 @@ export async function registerRoutes(
   });
 
   // --- Library Management ---
+
+  // Get all library items (Free for all authenticated users)
   app.get("/api/library/items", authenticateToken, async (req, res) => {
-    const items = await storage.getLibraryItems(req.query.search as string);
-    res.json(items);
+    try {
+      const items = await storage.library.getAllBooks(req.query.search as string);
+      res.json(items);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
   });
 
+  // Get single library item by ID (Free for all authenticated users)
+  app.get("/api/library/items/:id", authenticateToken, async (req, res) => {
+    try {
+      const item = await storage.library.getBook(Number(req.params.id));
+      if (!item) return res.status(404).json({ message: "Book not found" });
+      res.json(item);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Create new library item (Admin/Staff only)
   app.post("/api/library/items", authenticateToken, requirePermission('library', 'write'), async (req, res) => {
     try {
       const { publishYear, location, category, ...rest } = req.body;
@@ -1287,16 +1305,97 @@ export async function registerRoutes(
         publicationYear: publishYear,
         locationStack: location,
         itemType: "book",
-        // Store category in marcData for later use
         marcData: { category: category || "General" }
       };
-      const item = await storage.createLibraryItem(itemData);
+      const item = await storage.library.createBook(itemData);
       res.status(201).json(item);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Error adding library item" });
     }
   });
 
+  // Borrow a book (FREE FOR ALL authenticated users)
+  app.post("/api/library/borrow", authenticateToken, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const { itemId } = req.body;
+
+      if (!itemId) {
+        return res.status(400).json({ message: "itemId is required" });
+      }
+
+      const loan = await storage.library.borrowBook(userId, Number(itemId));
+
+      await auditService.log({
+        userId,
+        action: "create",
+        tableName: "library_loans",
+        recordId: loan.id,
+        newValue: loan,
+        req
+      });
+
+      res.status(201).json(loan);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Return a book (Admin/Staff only)
+  app.post("/api/library/return", authenticateToken, async (req, res) => {
+    // Allow admins, librarians, or staff to process returns
+    const user = (req as any).user;
+    if (!['admin', 'main_admin', 'principal', 'teacher'].includes(user.role)) {
+      return res.status(403).json({ error: "Forbidden", message: "Staff access required to process returns" });
+    }
+
+    try {
+      const { loanId } = req.body;
+      if (!loanId) {
+        return res.status(400).json({ message: "loanId is required" });
+      }
+
+      const loan = await storage.library.returnBook(Number(loanId));
+
+      await auditService.log({
+        userId: user.id,
+        action: "update",
+        tableName: "library_loans",
+        recordId: loan.id,
+        newValue: loan,
+        req
+      });
+
+      res.json(loan);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Get current user's loans (Free for all authenticated users - their own loans only)
+  app.get("/api/library/my-loans", authenticateToken, async (req, res) => {
+    try {
+      const userId = (req as any).user.id;
+      const activeOnly = req.query.active === 'true';
+      const loans = await storage.library.getUserLoans(userId, activeOnly);
+      res.json(loans);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Get all loans (Admin view)
+  app.get("/api/library/loans", authenticateToken, async (req, res) => {
+    try {
+      const activeOnly = req.query.active === 'true';
+      const loans = await storage.library.getAllLoans(activeOnly);
+      res.json(loans);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Legacy loan creation endpoint (kept for backward compatibility)
   app.post("/api/library/loans", authenticateToken, async (req, res) => {
     // Librarians or Admin only
     if (!['admin', 'main_admin', 'librarian'].includes((req as any).user.role)) {
