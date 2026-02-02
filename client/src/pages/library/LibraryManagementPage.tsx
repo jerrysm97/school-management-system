@@ -13,8 +13,10 @@ import { useToast } from "@/hooks/use-toast";
 import {
     Library, BookOpen, Plus, Search, BookMarked, Clock, AlertCircle,
     LayoutGrid, List as ListIcon, Filter, Star, TrendingUp, Sparkles,
-    ChevronLeft, ChevronRight, BookCopy, Users, Bookmark
+    ChevronLeft, ChevronRight, BookCopy, Users, Bookmark, Monitor, Globe
 } from "lucide-react";
+import { BookReader } from "@/components/library/BookReader";
+import { OpenLibrarySearch } from "@/components/library/OpenLibrarySearch";
 
 interface LibraryItem {
     id: number;
@@ -30,6 +32,14 @@ interface LibraryItem {
     location: string | null;
     status: string;
     coverUrl?: string;
+    // Digital content fields
+    bookFormat?: "physical" | "digital" | "both";
+    digitalFormat?: string | null;
+    contentUrl?: string | null;
+    openLibraryKey?: string | null;
+    internetArchiveId?: string | null;
+    isPublicDomain?: boolean;
+    subjects?: string[];
 }
 
 interface LibraryLoan {
@@ -75,6 +85,7 @@ export default function LibraryManagementPage() {
     const [selectedCategory, setSelectedCategory] = useState<string>("all");
     const [currentPage, setCurrentPage] = useState(1);
     const [selectedBook, setSelectedBook] = useState<LibraryItem | null>(null);
+    const [readingBook, setReadingBook] = useState<{ id: number; title: string } | null>(null);
     const ITEMS_PER_PAGE = 20;
 
     // External Search State
@@ -105,7 +116,11 @@ export default function LibraryManagementPage() {
         publishYear: "",
         callNumber: "",
         totalCopies: "1",
-        location: ""
+        location: "",
+        bookFormat: "physical",
+        digitalFormat: "",
+        contentUrl: "",
+        internetArchiveId: ""
     });
 
     const selectExternalBook = (book: any) => {
@@ -118,7 +133,11 @@ export default function LibraryManagementPage() {
             publishYear: book.publishedDate?.toString() || "",
             callNumber: "",
             totalCopies: "1",
-            location: "Main Library"
+            location: "Main Library",
+            bookFormat: book.canRead ? "both" : "physical",
+            digitalFormat: book.canRead ? "html" : "",
+            contentUrl: "",
+            internetArchiveId: book.internetArchiveId || ""
         });
         setExternalSearchResults([]);
         toast({ title: "Book Selected", description: "Form populated with book details" });
@@ -260,6 +279,10 @@ export default function LibraryManagementPage() {
             totalCopies: parseInt(formDataObj.get("totalCopies") as string) || 1,
             availableCopies: parseInt(formDataObj.get("totalCopies") as string) || 1,
             location: formDataObj.get("location") as string,
+            bookFormat: formDataObj.get("bookFormat") as any,
+            digitalFormat: formDataObj.get("digitalFormat") as string,
+            contentUrl: formDataObj.get("contentUrl") as string,
+            internetArchiveId: formDataObj.get("internetArchiveId") as string,
         });
     };
 
@@ -470,6 +493,68 @@ export default function LibraryManagementPage() {
                                                 <Label className="text-gray-700">Location</Label>
                                                 <Input name="location" value={formData.location} onChange={e => setFormData({ ...formData, location: e.target.value })} placeholder="e.g., Shelf A-12" className="mt-1.5 bg-white border-gray-300 text-gray-900" />
                                             </div>
+
+                                            <div className="pt-2 border-t border-gray-100">
+                                                <Label className="text-emerald-700 font-semibold flex items-center gap-2">
+                                                    <Monitor className="h-4 w-4" />
+                                                    Reading Format
+                                                </Label>
+                                                <div className="grid grid-cols-2 gap-4 mt-2">
+                                                    <div>
+                                                        <Label className="text-gray-700 text-xs uppercase tracking-wider">Book Format</Label>
+                                                        <Select name="bookFormat" value={formData.bookFormat} onValueChange={v => setFormData({ ...formData, bookFormat: v as any })}>
+                                                            <SelectTrigger className="mt-1 bg-white border-gray-300 text-gray-900 h-9">
+                                                                <SelectValue placeholder="Format" />
+                                                            </SelectTrigger>
+                                                            <SelectContent className="bg-white border-gray-200">
+                                                                <SelectItem value="physical">Physical Copy Only</SelectItem>
+                                                                <SelectItem value="digital">Digital Only</SelectItem>
+                                                                <SelectItem value="both">Both (Physical + Digital)</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                    {(formData.bookFormat === 'digital' || formData.bookFormat === 'both') && (
+                                                        <div>
+                                                            <Label className="text-gray-700 text-xs uppercase tracking-wider">Digital Format</Label>
+                                                            <Select name="digitalFormat" value={formData.digitalFormat} onValueChange={v => setFormData({ ...formData, digitalFormat: v })}>
+                                                                <SelectTrigger className="mt-1 bg-white border-gray-300 text-gray-900 h-9">
+                                                                    <SelectValue placeholder="Format" />
+                                                                </SelectTrigger>
+                                                                <SelectContent className="bg-white border-gray-200">
+                                                                    <SelectItem value="pdf">PDF File</SelectItem>
+                                                                    <SelectItem value="epub">EPUB E-book</SelectItem>
+                                                                    <SelectItem value="html">Web Reader (HTML/IA)</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {(formData.bookFormat === 'digital' || formData.bookFormat === 'both') && (
+                                                <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                    <div>
+                                                        <Label className="text-gray-700">Digital Content URL</Label>
+                                                        <Input
+                                                            name="contentUrl"
+                                                            value={formData.contentUrl}
+                                                            onChange={e => setFormData({ ...formData, contentUrl: e.target.value })}
+                                                            placeholder="https://example.com/book.pdf"
+                                                            className="mt-1.5 bg-white border-gray-300 text-gray-900 h-9"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <Label className="text-gray-700">Internet Archive ID (Optional)</Label>
+                                                        <Input
+                                                            name="internetArchiveId"
+                                                            value={formData.internetArchiveId}
+                                                            onChange={e => setFormData({ ...formData, internetArchiveId: e.target.value })}
+                                                            placeholder="ol_key_or_ia_id"
+                                                            className="mt-1.5 bg-white border-gray-300 text-gray-900 h-9"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
                                             <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={createItemMutation.isPending}>
                                                 {createItemMutation.isPending ? "Adding..." : "Add Book"}
                                             </Button>
@@ -569,6 +654,10 @@ export default function LibraryManagementPage() {
                                 <TabsTrigger value="catalog" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 data-[state=active]:shadow-sm rounded-md px-6 text-gray-600">
                                     <BookOpen className="h-4 w-4 mr-2" />
                                     Book Catalog
+                                </TabsTrigger>
+                                <TabsTrigger value="digital" className="data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-sm rounded-md px-6 text-gray-600">
+                                    <Monitor className="h-4 w-4 mr-2" />
+                                    Digital Library
                                 </TabsTrigger>
                                 <TabsTrigger value="my-loans" className="data-[state=active]:bg-white data-[state=active]:text-emerald-700 data-[state=active]:shadow-sm rounded-md px-6 text-gray-600">
                                     <BookMarked className="h-4 w-4 mr-2" />
@@ -736,10 +825,16 @@ export default function LibraryManagementPage() {
                                                 </div>
 
                                                 {/* Availability Badge */}
-                                                <div className="absolute top-3 right-3">
+                                                <div className="absolute top-3 right-3 flex flex-col gap-1">
                                                     <Badge className={`${item.availableCopies > 0 ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-red-500 hover:bg-red-600'} text-white border-0 shadow-md`}>
                                                         {item.availableCopies > 0 ? 'Available' : 'Out'}
                                                     </Badge>
+                                                    {(item.bookFormat === 'digital' || item.bookFormat === 'both') && (
+                                                        <Badge className="bg-blue-500 hover:bg-blue-600 text-white border-0 shadow-md">
+                                                            <Monitor className="h-3 w-3 mr-1" />
+                                                            Digital
+                                                        </Badge>
+                                                    )}
                                                 </div>
                                             </div>
 
@@ -822,6 +917,74 @@ export default function LibraryManagementPage() {
                             )}
                         </TabsContent>
 
+                        {/* Digital Library Tab */}
+                        <TabsContent value="digital" className="space-y-6 mt-0">
+                            <OpenLibrarySearch />
+
+                            {/* Digital Books Grid */}
+                            <Card className="bg-white border-gray-200 shadow-sm">
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-gray-900">
+                                        <Monitor className="h-5 w-5 text-blue-600" />
+                                        Books Available for Online Reading
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Click "Read Now" to open the book in your browser
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                        {mappedItems
+                                            .filter(item => item.bookFormat === 'digital' || item.bookFormat === 'both')
+                                            .map((item) => (
+                                                <div
+                                                    key={item.id}
+                                                    className="group bg-white rounded-xl border border-gray-200 overflow-hidden hover:border-blue-300 hover:shadow-lg transition-all"
+                                                >
+                                                    <div className="aspect-[2/3] relative overflow-hidden">
+                                                        {item.coverUrl ? (
+                                                            <img
+                                                                src={item.coverUrl}
+                                                                alt={item.title}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100">
+                                                                <BookOpen className="h-12 w-12 text-blue-300" />
+                                                            </div>
+                                                        )}
+                                                        {item.isPublicDomain && (
+                                                            <Badge className="absolute top-2 right-2 bg-green-500 text-white text-xs">
+                                                                Free
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                    <div className="p-3 space-y-2">
+                                                        <h4 className="font-medium text-gray-900 line-clamp-2 text-sm">{item.title}</h4>
+                                                        <p className="text-xs text-gray-500 line-clamp-1">{item.author}</p>
+                                                        <Button
+                                                            size="sm"
+                                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                                                            onClick={() => setReadingBook({ id: item.id, title: item.title })}
+                                                        >
+                                                            <Monitor className="h-3 w-3 mr-1" />
+                                                            Read Now
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        {mappedItems.filter(item => item.bookFormat === 'digital' || item.bookFormat === 'both').length === 0 && (
+                                            <div className="col-span-full flex flex-col items-center justify-center py-12 text-gray-500">
+                                                <Globe className="h-12 w-12 text-gray-300 mb-4" />
+                                                <p className="text-lg font-medium text-gray-700">No digital books yet</p>
+                                                <p className="text-sm text-gray-500 mt-1">Import books from Open Library above to get started</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+
                         {/* My Loans Tab - User's Own Borrowed Books */}
                         <TabsContent value="my-loans" className="space-y-4 mt-0">
                             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
@@ -887,7 +1050,7 @@ export default function LibraryManagementPage() {
                                         <p className="text-sm mt-1 text-gray-500">Browse the catalog and borrow books for free!</p>
                                         <Button
                                             className="mt-4 bg-emerald-600 hover:bg-emerald-700"
-                                            onClick={() => document.querySelector('[value="catalog"]')?.click()}
+                                            onClick={() => (document.querySelector('[value="catalog"]') as HTMLElement)?.click()}
                                         >
                                             <BookOpen className="h-4 w-4 mr-2" />
                                             Browse Catalog
@@ -1045,7 +1208,22 @@ export default function LibraryManagementPage() {
                                     </div>
 
                                     {/* Actions */}
-                                    <div className="flex gap-3 pt-4 border-t border-gray-200">
+                                    <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
+                                        {/* Read Now button for digital books */}
+                                        {(selectedBook.bookFormat === 'digital' || selectedBook.bookFormat === 'both') && (
+                                            <Button
+                                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                                                onClick={() => {
+                                                    setReadingBook({ id: selectedBook.id, title: selectedBook.title });
+                                                    setSelectedBook(null);
+                                                }}
+                                            >
+                                                <Monitor className="h-4 w-4 mr-2" />
+                                                Read Online Now
+                                            </Button>
+                                        )}
+
+                                        {/* Borrow button for physical copies */}
                                         {selectedBook.availableCopies > 0 ? (
                                             <Button
                                                 className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -1060,14 +1238,14 @@ export default function LibraryManagementPage() {
                                                 ) : (
                                                     <>
                                                         <BookMarked className="h-4 w-4 mr-2" />
-                                                        Borrow Now (Free)
+                                                        Borrow Physical Copy
                                                     </>
                                                 )}
                                             </Button>
                                         ) : (
                                             <Button className="flex-1" variant="outline" disabled>
                                                 <Clock className="h-4 w-4 mr-2" />
-                                                Currently Unavailable
+                                                No Physical Copies
                                             </Button>
                                         )}
                                         <Button variant="outline" onClick={() => setSelectedBook(null)}>
@@ -1075,25 +1253,50 @@ export default function LibraryManagementPage() {
                                         </Button>
                                     </div>
 
-                                    {/* Note about digital reading */}
-                                    <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
-                                        <div className="flex items-start gap-3">
-                                            <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
-                                            <div>
-                                                <p className="text-sm font-medium text-blue-800">Physical Library System</p>
-                                                <p className="text-sm text-blue-700 mt-1">
-                                                    This is a catalog for physical books. To read this book, please borrow it from
-                                                    the library and pick it up at the specified location.
-                                                </p>
+                                    {/* Note about reading options */}
+                                    {selectedBook.bookFormat === 'physical' ? (
+                                        <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
+                                            <div className="flex items-start gap-3">
+                                                <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+                                                <div>
+                                                    <p className="text-sm font-medium text-blue-800">Physical Book Only</p>
+                                                    <p className="text-sm text-blue-700 mt-1">
+                                                        This book is only available in physical format. Borrow it from the library
+                                                        and pick it up at the specified location.
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    ) : (
+                                        <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+                                            <div className="flex items-start gap-3">
+                                                <Monitor className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
+                                                <div>
+                                                    <p className="text-sm font-medium text-emerald-800">Digital Reading Available</p>
+                                                    <p className="text-sm text-emerald-700 mt-1">
+                                                        This book can be read online instantly. Click "Read Online Now" to start reading
+                                                        in your browser—no download required.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </>
                     )}
                 </DialogContent>
             </Dialog>
+
+            {/* Book Reader Modal */}
+            {readingBook && (
+                <BookReader
+                    bookId={readingBook.id}
+                    bookTitle={readingBook.title}
+                    onClose={() => setReadingBook(null)}
+                />
+            )}
         </div>
     );
 }
+

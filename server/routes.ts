@@ -828,6 +828,96 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // DIGITAL LIBRARY / OPEN LIBRARY ROUTES
+  // ============================================
+
+  // Search Open Library (All authenticated users)
+  app.get("/api/library/open-library/search", authenticateToken, async (req, res) => {
+    try {
+      const query = req.query.q as string;
+      if (!query || query.length < 2) {
+        return res.status(400).json({ message: "Query must be at least 2 characters" });
+      }
+
+      const results = await storage.library.searchOpenLibrary(query);
+      res.json(results);
+    } catch (e: any) {
+      console.error("Open Library search error:", e);
+      res.status(503).json({
+        message: "Unable to search Open Library. Service may be temporarily unavailable.",
+        retry: true
+      });
+    }
+  });
+
+  // Import book from Open Library (Admin/Staff only)
+  app.post("/api/library/open-library/import",
+    authenticateToken,
+    requirePermission('library', 'write'),
+    async (req, res) => {
+      try {
+        const bookData = req.body;
+
+        // Validation
+        if (!bookData.openLibraryKey || !bookData.title) {
+          return res.status(400).json({ message: "Invalid book data: openLibraryKey and title are required" });
+        }
+
+        const book = await storage.library.importFromOpenLibrary(bookData);
+
+        await auditService.log({
+          userId: (req as any).user.id,
+          action: "create",
+          tableName: "library_items",
+          recordId: book.id,
+          newValue: book,
+          metadata: { source: "open_library", openLibraryKey: bookData.openLibraryKey },
+          req
+        });
+
+        res.status(201).json(book);
+      } catch (e: any) {
+        res.status(400).json({ message: e.message });
+      }
+    });
+
+  // Get digital content URL (Authenticated only - prevents URL sharing)
+  app.get("/api/library/items/:id/read", authenticateToken, async (req, res) => {
+    try {
+      const bookId = Number(req.params.id);
+      const userId = (req as any).user.id;
+
+      const contentInfo = await storage.library.getDigitalContent(bookId, userId);
+
+      // Log access for analytics
+      await auditService.log({
+        userId,
+        action: "view",
+        tableName: "library_items",
+        recordId: bookId,
+        metadata: { action: "digital_read", format: contentInfo.format },
+        req
+      });
+
+      res.json(contentInfo);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
+  // Get all digital books (All authenticated users)
+  app.get("/api/library/digital", authenticateToken, async (req, res) => {
+    try {
+      const search = req.query.search as string | undefined;
+      const books = await storage.library.getDigitalBooks(search);
+      res.json(books);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Legacy external-search endpoint (backward compatibility)
   app.get("/api/library/external-search", authenticateToken, async (req, res) => {
     try {
       const query = req.query.q as string;
@@ -835,36 +925,27 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Query parameter 'q' is required" });
       }
 
-      const response = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=10`, {
-        headers: {
-          "User-Agent": "SchoolManagementSystem/1.0 (admin@school.edu)"
-        }
-      });
+      // Use the new typed service method
+      const results = await storage.library.searchOpenLibrary(query);
 
-      if (!response.ok) {
-        throw new Error(`Open Library API Error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const docs = data.docs || [];
-
-      // Map to a cleaner format for frontend
-      const results = docs.map((book: any) => ({
+      // Map to legacy format for backward compatibility
+      const legacyResults = results.map(book => ({
         title: book.title,
-        author: book.author_name ? book.author_name[0] : "Unknown",
-        isbn: (book.isbn && book.isbn.length > 0) ? book.isbn[0] : undefined,
-        key: book.key,
-        coverUrl: book.cover_i ? `https://covers.openlibrary.org/b/id/${book.cover_i}-M.jpg` : undefined,
-        publishedDate: book.first_publish_year,
-        pageCount: book.number_of_pages_median
+        author: book.author,
+        isbn: book.isbn,
+        key: book.openLibraryKey,
+        coverUrl: book.coverUrl,
+        publishedDate: book.publishedYear,
+        pageCount: book.pageCount
       }));
 
-      res.json(results);
+      res.json(legacyResults);
     } catch (e: any) {
       console.error("External search error:", e);
       res.status(500).json({ message: "Failed to fetch external books" });
     }
   });
+
 
 
   app.get(api.fees.stats.path, authenticateToken, async (req, res) => {

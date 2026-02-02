@@ -2126,11 +2126,12 @@ export const scheduledNotifications = pgTable("scheduled_notifications", {
 // ========================================
 // LIBRARY MANAGEMENT MODULE
 // ========================================
-
+// Library Management Module
 export const libraryItemStatusEnum = pgEnum("library_item_status", ["available", "checked_out", "reserved", "maintenance", "lost"]);
 export const libraryLoanStatusEnum = pgEnum("library_loan_status", ["active", "returned", "overdue", "lost"]);
+export const bookFormatEnum = pgEnum("book_format", ["physical", "digital", "both"]);
 
-// Catalog - Stores Book/Journal metadata (MARC 21 fields)
+// Catalog - Stores Book/Journal metadata (MARC 21 fields + Digital Content)
 export const libraryItems = pgTable("library_items", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
@@ -2149,6 +2150,18 @@ export const libraryItems = pgTable("library_items", {
   pageCount: integer("page_count"),
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow(),
+
+  // Digital Content Fields (for Open Library integration)
+  bookFormat: bookFormatEnum("book_format").default("physical"),
+  digitalFormat: text("digital_format"), // "pdf", "epub", "html"
+  contentUrl: text("content_url"), // URL to self-hosted digital content
+  openLibraryKey: text("open_library_key"), // e.g., "/works/OL15626917W"
+  openLibraryEditionKey: text("open_library_edition_key"),
+  internetArchiveId: text("internet_archive_id"), // For embedded reader
+  previewUrl: text("preview_url"), // Free preview link
+  isPublicDomain: boolean("is_public_domain").default(false),
+  subjects: jsonb("subjects").default([]), // Array of subject tags
+  languages: jsonb("languages").default(["en"]), // Language codes
 });
 
 // Circulation - Tracking borrowing history
