@@ -287,6 +287,14 @@ export interface IStorage {
   getCourseCategories(): Promise<any[]>;
   createCourseCategory(data: InsertCourseCategory): Promise<any>;
 
+  // Library
+  createLibraryItem(data: InsertLibraryItem): Promise<LibraryItem>;
+  getLibraryItems(search?: string): Promise<LibraryItem[]>;
+  getBookByISBN(isbn: string): Promise<LibraryItem | undefined>;
+  createLibraryLoan(data: InsertLibraryLoan): Promise<LibraryLoan>;
+  getLibraryLoans(userId?: string, activeOnly?: boolean): Promise<LibraryLoan[]>;
+  createCourseCategory(data: InsertCourseCategory): Promise<any>;
+
   getCourses(userRole?: string): Promise<Course[]>;
   getCourse(id: number): Promise<Course | undefined>;
   createCourse(data: InsertCourse): Promise<Course>;
@@ -2862,7 +2870,22 @@ export class DatabaseStorage implements IStorage {
     return record;
   }
   async getLibraryItems(search?: string): Promise<LibraryItem[]> {
+    if (search) {
+      const lowerSearch = `%${search.toLowerCase()}%`;
+      return await db.select().from(libraryItems).where(
+        or(
+          sql`lower(${libraryItems.title}) LIKE ${lowerSearch}`,
+          sql`lower(${libraryItems.author}) LIKE ${lowerSearch}`,
+          sql`lower(${libraryItems.isbn}) LIKE ${lowerSearch}`
+        )
+      );
+    }
     return await db.select().from(libraryItems);
+  }
+
+  async getBookByISBN(isbn: string): Promise<LibraryItem | undefined> {
+    const [book] = await db.select().from(libraryItems).where(eq(libraryItems.isbn, isbn));
+    return book;
   }
   async createLibraryLoan(data: InsertLibraryLoan): Promise<LibraryLoan> {
     const [record] = await db.insert(libraryLoans).values(data).returning();

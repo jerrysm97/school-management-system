@@ -37,7 +37,9 @@ import {
     type ChartOfAccount, type FiscalPeriod,
     type StudentEnrollment, type InsertStudentEnrollment,
     type InsertExpenseCategory, type ExpenseCategory, type InsertVendor, type Vendor, type InsertExpense, type Expense,
-    expenseCategories, vendors, expenses, paymentPlans, paymentPlanInstallments, feeStructuresv2, studentFees, feeCategories, studentEnrollments
+    type InsertApPayment, type ApPayment,
+    expenseCategories, vendors, expenses, paymentPlans, paymentPlanInstallments, feeStructuresv2, studentFees, feeCategories, studentEnrollments,
+    apPayments, apInvoices
 } from "@shared/schema";
 import { eq, and, desc, sql, lt, ne, isNull, isNotNull, inArray, sum } from "drizzle-orm";
 import { encrypt, decrypt } from "../utils/encryption";
@@ -234,8 +236,79 @@ export class FinanceService {
     // GENERAL LEDGER (GL)
     // ========================================
 
-    async getChartOfAccounts(): Promise<ChartOfAccount[]> {
-        return await db.select().from(chartOfAccounts).orderBy(chartOfAccounts.accountCode);
+    async getChartOfAccounts(isActive?: boolean): Promise<ChartOfAccount[]> {
+        const conditions = [];
+        if (isActive !== undefined) conditions.push(eq(chartOfAccounts.isActive, isActive));
+
+        return conditions.length > 0
+            ? await db.select().from(chartOfAccounts).where(and(...conditions)).orderBy(chartOfAccounts.accountCode)
+            : await db.select().from(chartOfAccounts).orderBy(chartOfAccounts.accountCode);
+    }
+
+    async createChartOfAccount(account: InsertChartOfAccount): Promise<ChartOfAccount> {
+        const [newAccount] = await db.insert(chartOfAccounts).values(account).returning();
+        return newAccount;
+    }
+
+    async updateChartOfAccount(id: number, updates: Partial<InsertChartOfAccount>): Promise<ChartOfAccount> {
+        const [updated] = await db.update(chartOfAccounts).set(updates).where(eq(chartOfAccounts.id, id)).returning();
+        return updated;
+    }
+
+    // Funds
+    async getGlFunds(isActive?: boolean): Promise<GlFund[]> {
+        const conditions = [];
+        if (isActive !== undefined) conditions.push(eq(glFunds.isActive, isActive));
+        return conditions.length > 0
+            ? await db.select().from(glFunds).where(and(...conditions))
+            : await db.select().from(glFunds);
+    }
+
+    async createGlFund(fund: InsertGlFund): Promise<GlFund> {
+        const [newFund] = await db.insert(glFunds).values(fund).returning();
+        return newFund;
+    }
+
+    // Fiscal Periods
+    async getFiscalPeriods(year?: number): Promise<FiscalPeriod[]> {
+        // This is a placeholder logic as schema might usestartDate/endDate for year determination
+        // Ideally we filter by year if implemented
+        return await db.select().from(fiscalPeriods).orderBy(desc(fiscalPeriods.startDate));
+    }
+
+    async createFiscalPeriod(period: InsertFiscalPeriod): Promise<FiscalPeriod> {
+        const [newPeriod] = await db.insert(fiscalPeriods).values(period).returning();
+        return newPeriod;
+    }
+
+    async closeFiscalPeriod(id: number, closedBy: number): Promise<void> {
+        await db.update(fiscalPeriods)
+            .set({ status: 'closed', closedAt: new Date(), closedBy })
+            .where(eq(fiscalPeriods.id, id));
+    }
+
+    // Journal Entries
+    async getJournalEntries(fiscalPeriodId?: number, status?: string): Promise<GlJournalEntry[]> {
+        const conditions = [];
+        if (fiscalPeriodId) conditions.push(eq(glJournalEntries.fiscalPeriodId, fiscalPeriodId));
+        if (status) conditions.push(eq(glJournalEntries.status, status as any));
+
+        return conditions.length > 0
+            ? await db.select().from(glJournalEntries).where(and(...conditions)).orderBy(desc(glJournalEntries.entryDate))
+            : await db.select().from(glJournalEntries).orderBy(desc(glJournalEntries.entryDate));
+    }
+
+    async getJournalEntry(id: number): Promise<GlJournalEntry | undefined> {
+        const [entry] = await db.select().from(glJournalEntries).where(eq(glJournalEntries.id, id));
+        return entry;
+    }
+
+    async postJournalEntry(id: number, postedBy: number): Promise<GlJournalEntry> {
+        const [entry] = await db.update(glJournalEntries)
+            .set({ status: 'posted', postedAt: new Date(), postedBy })
+            .where(eq(glJournalEntries.id, id))
+            .returning();
+        return entry;
     }
 
 
@@ -573,6 +646,61 @@ export class FinanceService {
             .where(eq(arPayments.id, paymentId));
     }
 
+    async getAutoBillRules(): Promise<ArAutoBillRule[]> {
+        return await db.select().from(arAutoBillRules).where(eq(arAutoBillRules.isActive, true));
+    }
+
+    async createAutoBillRule(rule: InsertArAutoBillRule): Promise<ArAutoBillRule> {
+        const [newRule] = await db.insert(arAutoBillRules).values(rule).returning();
+        return newRule;
+    }
+
+    async generateBillsFromEnrollment(studentId: number, periodId: number): Promise<void> {
+        // Placeholder for complex billing logic
+        console.log(`Generating bills for student ${studentId} period ${periodId}`);
+    }
+
+    async getOverdueBills(days: number): Promise<ArStudentBill[]> {
+        // Placeholder
+        return [];
+    }
+
+    async sendDunningNotice(billId: number): Promise<void> {
+        // Placeholder
+    }
+
+    async getDunningHistory(billId: number): Promise<any[]> {
+        return [];
+    }
+
+    // Refunds
+    async getRefundRequests(status?: string): Promise<any[]> {
+        const query = db.select().from(arRefunds);
+        if (status) query.where(eq(arRefunds.status, status as any));
+        return await query.execute();
+    }
+
+    async createRefundRequest(data: any): Promise<any> {
+        const [refund] = await db.insert(arRefunds).values(data).returning();
+        return refund;
+    }
+
+    async approveRefund(id: number, userId: number): Promise<void> {
+        await db.update(arRefunds).set({ status: 'approved', approvedBy: userId, approvedAt: new Date() }).where(eq(arRefunds.id, id));
+    }
+
+    async rejectRefund(id: number, userId: number): Promise<void> {
+        await db.update(arRefunds).set({ status: 'rejected', approvedBy: userId, approvedAt: new Date() }).where(eq(arRefunds.id, id));
+    }
+
+    async processRefund(id: number, userId: number): Promise<void> {
+        await db.update(arRefunds).set({ status: 'processed', processedBy: userId, processedAt: new Date() }).where(eq(arRefunds.id, id));
+    }
+
+    async postRefundToGL(id: number): Promise<void> {
+        // Placeholder
+    }
+
     // ========================================
     // ACCOUNTS PAYABLE (AP) & EXPENSES
     // ========================================
@@ -695,6 +823,62 @@ export class FinanceService {
         });
     }
 
+    // Reconciliations
+    async getReconciliations(accountId?: number, periodId?: number): Promise<GlReconciliation[]> {
+        const conditions = [];
+        if (accountId) conditions.push(eq(glReconciliations.accountId, accountId));
+        if (periodId) conditions.push(eq(glReconciliations.fiscalPeriodId, periodId));
+        return conditions.length > 0
+            ? await db.select().from(glReconciliations).where(and(...conditions))
+            : await db.select().from(glReconciliations);
+    }
+
+    async getReconciliation(id: number): Promise<GlReconciliation | undefined> {
+        const [rec] = await db.select().from(glReconciliations).where(eq(glReconciliations.id, id));
+        return rec;
+    }
+
+    async createReconciliation(data: InsertGlReconciliation): Promise<GlReconciliation> {
+        const [rec] = await db.insert(glReconciliations).values(data).returning();
+        return rec;
+    }
+
+    async updateReconciliation(id: number, data: Partial<InsertGlReconciliation>): Promise<GlReconciliation> {
+        const [rec] = await db.update(glReconciliations).set(data).where(eq(glReconciliations.id, id)).returning();
+        return rec;
+    }
+
+    async completeReconciliation(id: number, userId: number): Promise<void> {
+        await db.update(glReconciliations).set({ status: 'completed', completedAt: new Date(), completedBy: userId }).where(eq(glReconciliations.id, id));
+    }
+
+    async getReconciliationSummary(id: number): Promise<any> {
+        // Placeholder summary logic
+        const rec = await this.getReconciliation(id);
+        return { ...rec, summary: "Calculated summary here" };
+    }
+
+    async getUnclearedTransactions(accountId: number, endDate: string): Promise<GlTransaction[]> {
+        // Placeholder: join with reconciliation items to filter out cleared
+        // This assumes we have a link or 'cleared' flag. 
+        // For now return all for the account before date
+        return await db.select().from(glTransactions)
+            .innerJoin(glJournalEntries, eq(glTransactions.journalEntryId, glJournalEntries.id))
+            .where(and(
+                eq(glTransactions.accountId, accountId),
+                sql`${glJournalEntries.entryDate} <= ${endDate}`
+            ))
+            .then(res => res.map(r => ({ ...r.gl_transactions, journalEntry: r.gl_journal_entries })));
+    }
+
+    async markTransactionCleared(reconciliationId: number, transactionId: number, cleared: boolean): Promise<void> {
+        if (cleared) {
+            await db.insert(glReconciliationItems).values({ reconciliationId, glTransactionId: transactionId, cleared: true, clearedDate: new Date().toISOString() });
+        } else {
+            await db.delete(glReconciliationItems).where(and(eq(glReconciliationItems.reconciliationId, reconciliationId), eq(glReconciliationItems.glTransactionId, transactionId)));
+        }
+    }
+
     async createJournalEntry(entry: Omit<InsertGlJournalEntry, 'journalNumber'> & { journalNumber?: string }, transactions: Omit<InsertGlTransaction, 'journalEntryId'>[]): Promise<GlJournalEntry> {
         const journalNumber = entry.journalNumber || `JE-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 
@@ -769,6 +953,43 @@ export class FinanceService {
     // ========================================
     // SCHOLARSHIPS & FINANCIAL AID
     // ========================================
+
+    async getApVendors(): Promise<Vendor[]> {
+        return await this.getVendors();
+    }
+
+    async getApInvoices(vendorId?: number): Promise<ApInvoice[]> {
+        const query = db.select().from(apInvoices);
+        if (vendorId) query.where(eq(apInvoices.vendorId, vendorId));
+        return await query.orderBy(desc(apInvoices.invoiceDate));
+    }
+
+    async createApInvoice(invoice: InsertApInvoice): Promise<ApInvoice> {
+        const [newInvoice] = await db.insert(apInvoices).values(invoice).returning();
+        return newInvoice;
+    }
+
+    async approveApInvoice(id: number, userId: number): Promise<void> {
+        await db.update(apInvoices).set({ status: 'approved' }).where(eq(apInvoices.id, id));
+    }
+
+    async postApInvoiceToGL(id: number): Promise<void> {
+        // Placeholder
+    }
+
+    async createApPayment(payment: InsertApPayment): Promise<ApPayment> {
+        const [newPayment] = await db.insert(apPayments).values(payment).returning();
+        return newPayment;
+    }
+
+    async postApPaymentToGL(id: number): Promise<void> {
+        // Placeholder
+    }
+
+    // Purchase Orders
+    async createPurchaseOrderItem(data: any): Promise<any> {
+        return await db.insert(purchaseOrderItems).values(data).returning();
+    }
 
     async createScholarshipType(type: InsertScholarshipType): Promise<ScholarshipType> {
         const [newType] = await db.insert(scholarshipTypes).values(type).returning();

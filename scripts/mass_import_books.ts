@@ -1,6 +1,6 @@
 
 import { storage } from "../server/storage";
-import { insertLibraryBookSchema } from "../shared/schema";
+import { insertLibraryItemSchema } from "../shared/schema";
 
 const SUBJECTS = [
     "computer_science",
@@ -107,8 +107,8 @@ async function main() {
             };
 
             try {
-                const parsed = insertLibraryBookSchema.parse(bookData);
-                await storage.createBook(parsed);
+                const parsed = insertLibraryItemSchema.parse(bookData);
+                await storage.createLibraryItem(parsed);
                 // console.log(`Imported: ${book.title}`); // reduce log spam
                 totalImported++;
                 subjectImportedCount++;

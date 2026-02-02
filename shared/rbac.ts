@@ -42,7 +42,8 @@ export type Module =
     | 'settings'
     | 'reports'
     | 'system_config'
-    | 'audit_logs';
+    | 'audit_logs'
+    | 'library';
 
 export type Permission = 'read' | 'write' | 'delete' | 'approve' | 'admin';
 
@@ -63,6 +64,7 @@ export const ROLE_PERMISSIONS: Record<Role, Partial<Record<Module, Permission[]>
         reports: ['read', 'write', 'delete', 'approve', 'admin'],
         system_config: ['read', 'write', 'delete', 'approve', 'admin'],
         audit_logs: ['read', 'write', 'delete', 'approve', 'admin'],
+        library: ['read', 'write', 'delete', 'approve', 'admin'],
     },
     // 'admin' has reduced privileges compared to 'main_admin'
     admin: {
@@ -80,6 +82,7 @@ export const ROLE_PERMISSIONS: Record<Role, Partial<Record<Module, Permission[]>
         reports: ['read', 'write'],
         // NO system_config access
         audit_logs: ['read'], // Read-only for compliance visibility
+        library: ['read', 'write', 'delete', 'approve'],
     },
     principal: {
         dashboard: ['read', 'write'],
@@ -95,6 +98,7 @@ export const ROLE_PERMISSIONS: Record<Role, Partial<Record<Module, Permission[]>
         settings: ['read'],
         reports: ['read', 'write'],
         audit_logs: ['read'],
+        library: ['read', 'write', 'approve'],
     },
     accountant: {
         dashboard: ['read'],
@@ -110,6 +114,7 @@ export const ROLE_PERMISSIONS: Record<Role, Partial<Record<Module, Permission[]>
         attendance: ['read', 'write'],
         timetable: ['read'],
         exams: ['read', 'write'],
+        library: ['read'],
     },
     student: {
         dashboard: ['read'],
@@ -117,12 +122,14 @@ export const ROLE_PERMISSIONS: Record<Role, Partial<Record<Module, Permission[]>
         timetable: ['read'],
         exams: ['read'],
         fees: ['read'],
+        library: ['read'],
     },
     parent: {
         dashboard: ['read'],
         students: ['read'],
         attendance: ['read'],
         fees: ['read'],
+        library: ['read'],
     },
 };
 

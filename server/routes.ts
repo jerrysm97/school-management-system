@@ -42,10 +42,11 @@ const apiRateLimiter = rateLimit({
   message: { error: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
+  validate: false,
+  keyGenerator: (req: any) => {
     // If authenticated, limit by User ID. If not, limit by IP.
     // This prevents "Campus NAT" issues where many students share one IP.
-    return (req as any).user ? `user-${(req as any).user.id}` : req.ip;
+    return req.user ? `user-${req.user.id}` : req.ip;
   }
 } as any);
 
@@ -91,10 +92,10 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (!token) return res.sendStatus(401);
+  if (!token) return res.status(401).json({ error: "Unauthorized", message: "Authentication token required" });
 
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) return res.sendStatus(403);
+    if (err) return res.status(403).json({ error: "Forbidden", message: "Invalid or expired token" });
     // User payload now includes isImpersonating and originalAdminId
     (req as any).user = user;
     next();
@@ -344,8 +345,8 @@ export async function registerRoutes(
 
   app.get(api.auth.me.path, authenticateToken, async (req, res) => {
     const userId = (req as any).user.id;
-    const user = await storage.users.getUser(Number(userId));
-    if (!user) return res.sendStatus(404);
+    const user = await storage.users.getUser(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
     const { password: _, ...userWithoutPassword } = user;
     res.json(userWithoutPassword);
   });
@@ -360,7 +361,7 @@ export async function registerRoutes(
     }
 
     const { userId } = req.body;
-    const targetUser = await storage.users.getUser(Number(userId));
+    const targetUser = await storage.users.getUser(userId);
 
     if (!targetUser) {
       return res.status(404).json({ message: "Target user not found" });
@@ -827,6 +828,44 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/library/external-search", authenticateToken, async (req, res) => {
+    try {
+      const query = req.query.q as string;
+      if (!query) {
+        return res.status(400).json({ message: "Query parameter 'q' is required" });
+      }
+
+      const response = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=10`, {
+        headers: {
+          "User-Agent": "SchoolManagementSystem/1.0 (admin@school.edu)"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Open Library API Error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const docs = data.docs || [];
+
+      // Map to a cleaner format for frontend
+      const results = docs.map((book: any) => ({
+        title: book.title,
+        author: book.author_name ? book.author_name[0] : "Unknown",
+        isbn: (book.isbn && book.isbn.length > 0) ? book.isbn[0] : undefined,
+        key: book.key,
+        coverUrl: book.cover_i ? `https://covers.openlibrary.org/b/id/${book.cover_i}-M.jpg` : undefined,
+        publishedDate: book.first_publish_year,
+        pageCount: book.number_of_pages_median
+      }));
+
+      res.json(results);
+    } catch (e: any) {
+      console.error("External search error:", e);
+      res.status(500).json({ message: "Failed to fetch external books" });
+    }
+  });
+
 
   app.get(api.fees.stats.path, authenticateToken, async (req, res) => {
     const stats = await storage.getFeeStats();
@@ -1240,9 +1279,29 @@ export async function registerRoutes(
     res.json(items);
   });
 
+  app.post("/api/library/items", authenticateToken, requirePermission('library', 'write'), async (req, res) => {
+    try {
+      const { publishYear, location, category, ...rest } = req.body;
+      const itemData = {
+        ...rest,
+        publicationYear: publishYear,
+        locationStack: location,
+        itemType: "book",
+        // Store category in marcData for later use
+        marcData: { category: category || "General" }
+      };
+      const item = await storage.createLibraryItem(itemData);
+      res.status(201).json(item);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message || "Error adding library item" });
+    }
+  });
+
   app.post("/api/library/loans", authenticateToken, async (req, res) => {
     // Librarians or Admin only
-    if (!['admin', 'main_admin', 'librarian'].includes((req as any).user.role)) return res.sendStatus(403);
+    if (!['admin', 'main_admin', 'librarian'].includes((req as any).user.role)) {
+      return res.status(403).json({ error: "Forbidden", message: "Library staff access required" });
+    }
     try {
       const loan = await storage.createLibraryLoan(req.body);
       await auditService.log({
@@ -1585,7 +1644,7 @@ export async function registerRoutes(
 
   app.put("/api/gl/chart-of-accounts/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const account = await storage.updateChartOfAccount(Number((req.params.id as string)), req.body);
+      const account = await storage.finance.updateChartOfAccount(Number(req.params.id), req.body);
       res.json(account);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1596,7 +1655,7 @@ export async function registerRoutes(
   app.get("/api/gl/funds", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
-      const funds = await storage.getGlFunds(isActive);
+      const funds = await storage.finance.getGlFunds(isActive);
       res.json(funds);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1644,7 +1703,7 @@ export async function registerRoutes(
 
   app.post("/api/gl/fiscal-periods/:id/close", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.finance.closeFiscalPeriod(Number((req.params.id as string)), (req as any).user.id);
+      await storage.finance.closeFiscalPeriod(Number(req.params.id), (req as any).user.id);
       res.json({ message: "Fiscal period closed successfully" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -1748,8 +1807,8 @@ export async function registerRoutes(
   app.get("/api/gl/reconciliations", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const accountId = req.query.accountId ? Number(req.query.accountId) : undefined;
-      const status = req.query.status as string | undefined;
-      const reconciliations = await storage.finance.getReconciliations(accountId, status);
+      const periodId = req.query.periodId ? Number(req.query.periodId) : undefined;
+      const reconciliations = await storage.finance.getReconciliations(accountId, periodId);
       res.json(reconciliations);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1768,8 +1827,8 @@ export async function registerRoutes(
   });
 
   app.put("/api/gl/reconciliations/:id", authenticateToken, requireFinanceAccess, async (req, res) => {
-    const recon = await storage.finance.updateReconciliation(Number(req.params.id), req.body);
-    res.json(recon);
+    const rec = await storage.finance.updateReconciliation(Number(req.params.id), req.body);
+    res.json(rec);
   });
 
   app.post("/api/gl/reconciliations/:id/complete", authenticateToken, requireFinanceAccess, async (req, res) => {
@@ -1912,7 +1971,7 @@ export async function registerRoutes(
 
   app.post("/api/ar/refunds/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.finance.postRefundToGL(Number((req.params.id as string)));
+      await storage.finance.postRefundToGL(Number(req.params.id));
       res.json({ message: "Refund posted to GL successfully" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -2217,7 +2276,7 @@ export async function registerRoutes(
 
   app.post("/api/ap/invoices/:id/approve", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.finance.approveApInvoice(Number((req.params.id as string)), (req as any).user.id);
+      await storage.finance.approveApInvoice(Number(req.params.id), (req as any).user.id);
       res.json({ message: "Invoice approved" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -2247,7 +2306,7 @@ export async function registerRoutes(
 
   app.post("/api/ap/payments/:id/post-to-gl", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      await storage.finance.postApPaymentToGL(Number((req.params.id as string)));
+      await storage.finance.postApPaymentToGL(Number(req.params.id));
       res.json({ message: "Payment posted to GL" });
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -2877,7 +2936,8 @@ export async function registerRoutes(
 
   app.post("/api/finance/expenses/purchase-orders", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const po = await storage.createPurchaseOrder(req.body);
+      const { items, ...poData } = req.body;
+      const po = await storage.createPurchaseOrder(poData, items || []);
       res.status(201).json(po);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Error creating purchase order" });
@@ -2886,7 +2946,7 @@ export async function registerRoutes(
 
   app.post("/api/finance/expenses/purchase-orders/items", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
-      const item = await storage.createPurchaseOrderItem(req.body);
+      const item = await storage.finance.createPurchaseOrderItem(req.body);
       res.status(201).json(item);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Error creating PO item" });
