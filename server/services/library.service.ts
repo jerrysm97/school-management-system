@@ -78,7 +78,10 @@ export class LibraryService {
                 throw new Error("Book not found");
             }
 
-            if (book.availableCopies < 1) {
+            // Handle null availableCopies (use totalCopies as fallback)
+            const availableCopies = book.availableCopies ?? book.totalCopies ?? 1;
+
+            if (availableCopies < 1) {
                 throw new Error("No copies available for borrowing");
             }
 
@@ -87,7 +90,10 @@ export class LibraryService {
                 and(
                     eq(libraryLoans.itemId, itemId),
                     eq(libraryLoans.userId, userId),
-                    eq(libraryLoans.status, 'active')
+                    or(
+                        eq(libraryLoans.status, 'active'),
+                        eq(libraryLoans.status, 'overdue')
+                    )
                 )
             );
 
@@ -97,7 +103,7 @@ export class LibraryService {
 
             // 3. Decrement available copies
             await tx.update(libraryItems)
-                .set({ availableCopies: book.availableCopies - 1 })
+                .set({ availableCopies: availableCopies - 1 })
                 .where(eq(libraryItems.id, itemId));
 
             // 4. Create loan record (default 14 days loan period)
