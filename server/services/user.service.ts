@@ -3,12 +3,15 @@ import { users, students, type User, type InsertUser } from "@shared/schema";
 import { eq, or } from "drizzle-orm";
 
 /**
- * Removes sensitive information (password) from the user object.
+ * Removes sensitive fields from the user object before returning it to clients.
+ *
+ * SECURITY: When adding a new sensitive column to the User schema (e.g., twoFactorSecret,
+ * resetToken), you MUST add it to BOTH the destructure pattern AND the Omit<> type below.
+ * TypeScript will catch call-site mismatches if the Omit is kept in sync.
  */
-export function sanitizeUser(user: User): User {
-    const safe = { ...user };
-    delete (safe as any).password;
-    return safe;
+export function sanitizeUser(user: User): Omit<User, 'password' | 'googleId'> {
+    const { password, googleId, ...safeData } = user;
+    return safeData;
 }
 
 export class UserService {

@@ -10,30 +10,46 @@ const httpServer = createServer(app);
 (async () => {
   await registerRoutes(httpServer, app);
 
+  // Redacts sensitive fields from req.body before logging.
+  // SECURITY: Never log passwords, tokens, or secret values in plaintext.
+  function sanitizeBody(body: Record<string, any> | undefined): Record<string, any> {
+    if (!body || typeof body !== 'object') return {};
+    const REDACTED_KEYS = ['password', 'currentPassword', 'newPassword', 'token', 'idToken'];
+    const sanitized = { ...body };
+    for (const key of REDACTED_KEYS) {
+      if (key in sanitized) sanitized[key] = '[REDACTED]';
+    }
+    return sanitized;
+  }
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
+    const isProduction = process.env.NODE_ENV === 'production';
 
-    // Enhanced Logging
-    const errorDetails = {
-      message: message,
-      stack: err.stack,
+    // Log with sanitized body — never log raw passwords or tokens.
+    console.error("Server Error:", JSON.stringify({
+      message,
       path: _req.path,
       method: _req.method,
-      body: _req.body,
-      user: (_req as any).user ? (_req as any).user.username : 'anonymous'
-    };
-
-    console.error("Industrial Error Log:", JSON.stringify(errorDetails, null, 2));
+      body: sanitizeBody(_req.body),
+      user: (_req as any).user?.username ?? 'anonymous',
+      // Stack traces are useful for debugging but not needed in production logs
+      ...(isProduction ? {} : { stack: err.stack }),
+    }, null, 2));
 
     if (res.headersSent) {
       return next(err);
     }
 
-    // In production, don't leak stack traces (TEMPORARILY ENABLED FOR DEBUGGING)
-    const response = { message, stack: err.stack, details: err.toString() };
+    // SECURITY: In production, never expose stack traces or internal error details to clients.
+    if (isProduction) {
+      // Generic message for 500s prevents internal info leakage.
+      return res.status(status).json({ message: status === 500 ? "Internal Server Error" : message });
+    }
 
-    return res.status(status).json(response);
+    // In development: include full details to aid debugging.
+    return res.status(status).json({ message, stack: err.stack, details: err.toString() });
   });
 
   if (process.env.NODE_ENV === "production") {

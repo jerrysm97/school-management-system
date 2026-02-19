@@ -30,27 +30,33 @@ export function encrypt(text: string): string {
 
 /**
  * Decrypts a string encrypted with the above encrypt function.
+ *
+ * SECURITY: This function intentionally has NO try/catch and NO fallback return value.
+ * All errors propagate as thrown exceptions. Callers MUST wrap this in try/catch and
+ * handle decryption failure (e.g., return 500 or skip the field) rather than allowing
+ * error-message literals to be stored in the database or sent to clients.
+ *
+ * Errors that will be thrown:
+ *   - ERR_CRYPTO_MALFORMED  — input is not in the expected iv:authTag:ciphertext format
+ *   - ERR_OSSL_*            — bad auth tag (data tampered), wrong key, or malformed hex
  */
 export function decrypt(encryptedText: string): string {
-    try {
-        const [ivHex, authTagHex, ciphertextHex] = encryptedText.split(":");
+    const parts = encryptedText.split(":");
+    const [ivHex, authTagHex, ciphertextHex] = parts;
 
-        if (!ivHex || !authTagHex || !ciphertextHex) {
-            throw new Error("Invalid encrypted text format");
-        }
-
-        const iv = Buffer.from(ivHex, "hex");
-        const authTag = Buffer.from(authTagHex, "hex");
-        const decipher = createDecipheriv(ALGORITHM, Buffer.from(KEY.substring(0, 32)), iv);
-
-        decipher.setAuthTag(authTag);
-
-        let decrypted = decipher.update(ciphertextHex, "hex", "utf8");
-        decrypted += decipher.final("utf8");
-
-        return decrypted;
-    } catch (error: any) {
-        console.error("Decryption failed:", error.message);
-        return "[DECRYPTION_FAILED]";
+    // Validate format BEFORE attempting to use any part of the input.
+    if (!ivHex || !authTagHex || !ciphertextHex) {
+        throw new Error("ERR_CRYPTO_MALFORMED: Invalid encrypted text format (expected iv:authTag:ciphertext)");
     }
+
+    const iv = Buffer.from(ivHex, "hex");
+    const authTag = Buffer.from(authTagHex, "hex");
+    const decipher = createDecipheriv(ALGORITHM, Buffer.from(KEY.substring(0, 32)), iv);
+
+    decipher.setAuthTag(authTag);
+
+    let decrypted = decipher.update(ciphertextHex, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+
+    return decrypted;
 }

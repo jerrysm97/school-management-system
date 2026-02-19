@@ -1724,10 +1724,13 @@ export class DatabaseStorage implements IStorage {
       bankAccountInfo: vendor.bankAccountInfo ? encrypt(vendor.bankAccountInfo) : null
     };
     const [newVendor] = await db.insert(apVendors).values(encryptedVendor).returning();
-    return {
-      ...newVendor,
-      bankAccountInfo: newVendor.bankAccountInfo ? decrypt(newVendor.bankAccountInfo) : null
-    };
+    // SECURITY: Wrap decrypt() — it throws on bad auth tag / malformed data.
+    // Return null rather than letting a crypto error propagate to the caller.
+    let bankAccountInfo: string | null = null;
+    if (newVendor.bankAccountInfo) {
+      try { bankAccountInfo = decrypt(newVendor.bankAccountInfo); } catch { bankAccountInfo = null; }
+    }
+    return { ...newVendor, bankAccountInfo };
   }
 
   async createExpenseReport(report: any, items: any[]): Promise<any> {
@@ -1842,10 +1845,15 @@ export class DatabaseStorage implements IStorage {
       ? await db.select().from(apVendors).where(eq(apVendors.isActive, isActive))
       : await db.select().from(apVendors);
 
-    return rows.map(v => ({
-      ...v,
-      bankAccountInfo: v.bankAccountInfo ? decrypt(v.bankAccountInfo) : null
-    }));
+    return rows.map(v => {
+      // SECURITY: Wrap decrypt() — throws on tampered data or key mismatch.
+      // Yield null for corrupted/unreadable fields rather than surfacing crypto errors.
+      let bankAccountInfo: string | null = null;
+      if (v.bankAccountInfo) {
+        try { bankAccountInfo = decrypt(v.bankAccountInfo); } catch { bankAccountInfo = null; }
+      }
+      return { ...v, bankAccountInfo };
+    });
   }
   // AP PO Matching Implementation - Uses createPurchaseOrder from line ~1348
   // This version handles items - use for AP module

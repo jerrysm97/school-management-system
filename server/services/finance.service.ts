@@ -711,10 +711,13 @@ export class FinanceService {
             bankAccountInfo: vendor.bankAccountInfo ? encrypt(vendor.bankAccountInfo) : null
         };
         const [newVendor] = await db.insert(apVendors).values(encryptedVendor).returning();
-        return {
-            ...newVendor,
-            bankAccountInfo: newVendor.bankAccountInfo ? decrypt(newVendor.bankAccountInfo) : null
-        };
+        // SECURITY: Wrap decrypt() — it throws on bad auth tag / malformed data.
+        // Return null rather than letting a crypto error propagate to the caller.
+        let bankAccountInfo: string | null = null;
+        if (newVendor.bankAccountInfo) {
+            try { bankAccountInfo = decrypt(newVendor.bankAccountInfo); } catch { bankAccountInfo = null; }
+        }
+        return { ...newVendor, bankAccountInfo };
     }
 
     async getVendors(): Promise<Vendor[]> {

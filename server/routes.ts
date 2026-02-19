@@ -61,9 +61,14 @@ const authRateLimiter = rateLimit({
   }
 });
 
+// Scrypt cost parameters — must match between hashPassword and comparePassword.
+// N=16384 (CPU/memory cost), r=8 (block size), p=1 (parallelization).
+const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1 };
+
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  // Explicit cost parameters prevent silent breakage if Node defaults change.
+  const buf = (await scryptAsync(password, salt, 64, SCRYPT_OPTIONS)) as Buffer;
   return `${buf.toString("hex")}.${salt}`;
 }
 
@@ -72,7 +77,8 @@ async function comparePassword(supplied: string, stored: string) {
     if (!stored || !stored.includes(".") || stored.startsWith("$")) return false;
     const [hashed, salt] = stored.split(".");
     if (!hashed || !salt) return false;
-    const buf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+    // Cost parameters must exactly match hashPassword or all comparisons will silently fail.
+    const buf = (await scryptAsync(supplied, salt, 64, SCRYPT_OPTIONS)) as Buffer;
     return timingSafeEqual(Buffer.from(hashed, "hex"), buf);
   } catch (err) {
     console.error("Password comparison failed:", err);
@@ -81,7 +87,9 @@ async function comparePassword(supplied: string, stored: string) {
 }
 
 function generateTemporaryPassword() {
-  return randomBytes(4).toString("hex");
+  // randomBytes(12).toString('base64url') produces a 16-char URL-safe string
+  // with 72 bits of entropy — far more than the previous hex(4) = 32 bits.
+  return randomBytes(12).toString('base64url');
 }
 
 // ========================================
@@ -160,11 +168,15 @@ const authorizeStudentAccess = async (req: Request, res: Response, next: NextFun
     return next();
   }
 
-  // Extract requested student ID from params
-  const requestedId = Number(req.params.studentId || req.params.id);
+  // Extract requested student ID from route params as a raw string.
+  // Do NOT apply Number() or parseInt() — students/users tables use UUIDs,
+  // and coercing a UUID string to a number always produces NaN, which would
+  // bypass the IDOR check below entirely.
+  const requestedId = req.params.studentId ?? req.params.id;
 
-  if (!requestedId) {
-    // No student ID in params, let the route handler decide
+  // Explicit null/undefined check — falsy check would incorrectly block ID "0"
+  if (requestedId === undefined || requestedId === null) {
+    // No student ID in params; let the route handler decide
     return next();
   }
 
@@ -180,7 +192,9 @@ const authorizeStudentAccess = async (req: Request, res: Response, next: NextFun
         });
       }
 
-      if (student.id !== requestedId) {
+      // Compare as strings — route params are always strings; student.id may be
+      // numeric (serial PK) or UUID. String() normalises both without data loss.
+      if (String(student.id) !== requestedId) {
         return res.status(403).json({
           error: "Forbidden",
           message: "IDOR Detection: Access to other student records denied."
@@ -202,7 +216,7 @@ const authorizeStudentAccess = async (req: Request, res: Response, next: NextFun
     });
   }
 
-  // Teachers and other roles - they need per-route authorization
+  // Teachers and other roles — they need per-route authorization
   // For sensitive student financial data, they should not have access by default
   if (role === 'teacher') {
     return res.status(403).json({
@@ -447,7 +461,8 @@ export async function registerRoutes(
     const allowedRoles = ['admin', 'main_admin', 'principal'];
     if (!allowedRoles.includes(userRole)) return res.sendStatus(403);
     const { status } = req.body;
-    await storage.updateStudentStatus(Number(req.params.id), status);
+    // Removed Number() coercion — students table uses UUID; pass param as string.
+    await storage.updateStudentStatus(req.params.id as any, status);
     res.json({ message: `Student ${status}` });
   });
 
@@ -571,7 +586,8 @@ export async function registerRoutes(
   });
 
   app.get(api.students.get.path, authenticateToken, authorizeStudentAccess, async (req, res) => {
-    const student = await storage.getStudent(Number(req.params.id));
+    // Removed Number() coercion — students table uses UUID; pass param as string.
+    const student = await storage.getStudent(req.params.id as any);
     if (!student) return res.status(404).json({ message: "Student not found" });
     res.json(student);
   });

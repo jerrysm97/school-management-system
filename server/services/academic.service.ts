@@ -83,12 +83,27 @@ export class AcademicService {
 
         if (!row) return undefined;
 
+        // SECURITY: safeDecrypt wraps the propagating decrypt() in try/catch.
+        // On decryption failure (wrong key/tampered data), the field is set to null
+        // rather than throwing 500 or storing an error string in the returned object.
+        const safeDecrypt = (cipher: string | null): string | null => {
+            if (!cipher) return null;
+            try { return decrypt(cipher); } catch { return null; }
+        };
+
+        const decryptedOrMasked = (cipher: string | null): string | null => {
+            if (!cipher) return null;
+            const plain = safeDecrypt(cipher);
+            if (plain === null) return null; // decryption failed
+            return includeSensitive ? plain : "****";
+        };
+
         const student = {
             ...row.student,
-            nationalId: row.student.nationalId ? (decrypt(row.student.nationalId) ? (includeSensitive ? decrypt(row.student.nationalId) : "****") : null) : null,
-            citizenship: row.student.citizenship ? (decrypt(row.student.citizenship) ? (includeSensitive ? decrypt(row.student.citizenship) : "****") : null) : null,
-            religion: row.student.religion ? (decrypt(row.student.religion) ? (includeSensitive ? decrypt(row.student.religion) : "****") : null) : null,
-            bloodGroup: row.student.bloodGroup ? (decrypt(row.student.bloodGroup) ? (includeSensitive ? decrypt(row.student.bloodGroup) : "****") : null) : null,
+            nationalId: decryptedOrMasked(row.student.nationalId),
+            citizenship: decryptedOrMasked(row.student.citizenship),
+            religion: decryptedOrMasked(row.student.religion),
+            bloodGroup: decryptedOrMasked(row.student.bloodGroup),
         };
         return { ...student, user: sanitizeUser(row.user) };
     }

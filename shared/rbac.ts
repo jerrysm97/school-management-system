@@ -1,30 +1,36 @@
 // Role-Based Access Control (RBAC) System
 // Based on hierarchical role structure with inherited permissions
 
-// Legacy 'admin' is aliased to 'main_admin' for backward compatibility
-export type Role = 'main_admin' | 'admin' | 'principal' | 'accountant' | 'teacher' | 'student' | 'parent';
+// IMPORTANT: 'admin' has been removed as a valid runtime role.
+// All legacy 'admin' DB values must be migrated to 'main_admin' before deploying.
+// Run scripts/migrate-admin-roles.sql as a one-time migration.
+export type Role = 'main_admin' | 'principal' | 'accountant' | 'teacher' | 'student' | 'parent';
 
 // Administrative roles that can access sensitive modules
-export const ADMIN_ROLES: readonly Role[] = ['main_admin', 'admin', 'principal', 'accountant'] as const;
+export const ADMIN_ROLES: readonly Role[] = ['main_admin', 'principal', 'accountant'] as const;
 
 // Roles that bypass student-specific access checks
-export const BYPASS_STUDENT_CHECK_ROLES: readonly Role[] = ['main_admin', 'admin', 'principal', 'accountant'] as const;
+export const BYPASS_STUDENT_CHECK_ROLES: readonly Role[] = ['main_admin', 'principal', 'accountant'] as const;
 
-// Normalize role (map legacy 'admin' to 'main_admin')
+// Validates a string value from the DB or JWT is a known Role.
+// SECURITY: Never silently alias or coerce unknown role strings — reject them explicitly.
+// If this throws, the user's token/DB record has an invalid role and should be treated as unauthenticated.
+const VALID_ROLES = new Set<string>(['main_admin', 'principal', 'accountant', 'teacher', 'student', 'parent']);
 export function normalizeRole(role: string): Role {
-    return (role === 'admin' ? 'main_admin' : role) as Role;
+    if (!VALID_ROLES.has(role)) {
+        throw new Error(`ERR_RBAC_UNKNOWN_ROLE: '${role}' is not a recognized system role.`);
+    }
+    return role as Role;
 }
 
 // Role Hierarchy (Level 0 = highest)
-// Note: 'admin' is treated as 'main_admin' (level 0)
 export const ROLE_HIERARCHY: Record<Role, number> = {
     main_admin: 0,
-    admin: 1, // Subordinate to main_admin
-    principal: 2,
-    accountant: 3,
-    teacher: 3,
-    student: 4,
-    parent: 5,
+    principal: 1,
+    accountant: 2,
+    teacher: 2,
+    student: 3,
+    parent: 4,
 };
 
 // Module permissions
@@ -66,24 +72,7 @@ export const ROLE_PERMISSIONS: Record<Role, Partial<Record<Module, Permission[]>
         audit_logs: ['read', 'write', 'delete', 'approve', 'admin'],
         library: ['read', 'write', 'delete', 'approve', 'admin'],
     },
-    // 'admin' has reduced privileges compared to 'main_admin'
-    admin: {
-        dashboard: ['read', 'write', 'approve'],
-        users: ['read', 'write', 'approve'],
-        students: ['read', 'write', 'delete', 'approve'],
-        teachers: ['read', 'write', 'delete', 'approve'],
-        classes: ['read', 'write', 'delete', 'approve'],
-        attendance: ['read', 'write', 'approve'],
-        timetable: ['read', 'write', 'approve'],
-        exams: ['read', 'write', 'delete', 'approve'],
-        fees: ['read', 'write', 'delete', 'approve'],
-        financial_engine: ['read', 'write', 'approve'],
-        settings: ['read', 'write'],
-        reports: ['read', 'write'],
-        // NO system_config access
-        audit_logs: ['read'], // Read-only for compliance visibility
-        library: ['read', 'write', 'delete', 'approve'],
-    },
+
     principal: {
         dashboard: ['read', 'write'],
         users: ['read', 'write'],
@@ -146,13 +135,7 @@ export const ROLE_METADATA: Record<Role, {
         level: 0,
         color: 'red',
     },
-    // 'admin' is a legacy alias for 'main_admin'
-    admin: {
-        label: 'Administrator',
-        description: 'Full system-wide access to all modules. Legacy alias for Main Administrator.',
-        level: 0,
-        color: 'red',
-    },
+
     principal: {
         label: 'Principal',
         description: 'Institutional oversight with access to dashboards, reports, and approvals.',

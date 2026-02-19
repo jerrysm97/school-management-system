@@ -41,8 +41,10 @@ function createConnection() {
     // Supabase-specific settings
     prepare: false, // Required for Supabase transaction pooling
 
-    // SSL settings for production
-    ssl: isProduction ? { rejectUnauthorized: false } : false,
+    // SSL settings for production.
+    // SECURITY: rejectUnauthorized: false disables certificate chain verification,
+    // which enables MITM attacks on the DB connection. Always use true in production.
+    ssl: isProduction ? { rejectUnauthorized: true } : false,
 
     // Connection lifecycle hooks
     onnotice: () => { }, // Suppress notice messages
