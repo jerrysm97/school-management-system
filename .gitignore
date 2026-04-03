@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-server
 .DS_Store
 server/public
 vite.config.ts.*
@@ -7,3 +8,7 @@ vite.config.ts.*
 .vercel
 .env
 .env.*
+*.db
+tsc_output.txt
+.local
+.replit
