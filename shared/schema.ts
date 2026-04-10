@@ -596,6 +596,8 @@ export const insertCourseModuleSchema = createInsertSchema(courseModules).omit({
 export const insertLmsAssignmentSchema = createInsertSchema(lmsAssignments).omit({ id: true });
 export const insertLmsQuizSchema = createInsertSchema(lmsQuizzes).omit({ id: true });
 export const insertLmsForumSchema = createInsertSchema(lmsForums).omit({ id: true });
+export const insertCourseEnrollmentSchema = createInsertSchema(courseEnrollments).omit({ id: true, enrolledAt: true });
+export const insertLmsSubmissionSchema = createInsertSchema(lmsSubmissions).omit({ id: true, submittedAt: true });
 
 // LMS Type Exports
 export type Course = typeof courses.$inferSelect;
@@ -688,13 +690,10 @@ export const staff = pgTable("staff", {
 // Note: We are using the existing 'students' table but conceptually treating 'pending' students as admission applicants.
 // The new fields below are managed via UDF in 'students' or we can add specific columns if usage is high.
 // We added nationalId, citizenship etc. previously.
-// Let's ensure we export schemas for the new tables.
-
+// HR and Staff Schemas
 export const insertJobPostingSchema = createInsertSchema(jobPostings).omit({ id: true, createdAt: true });
 export const insertJobApplicationSchema = createInsertSchema(jobApplications).omit({ id: true, appliedAt: true });
 export const insertStaffSchema = createInsertSchema(staff).omit({ id: true });
-export const insertCourseEnrollmentSchema = createInsertSchema(courseEnrollments).omit({ id: true, enrolledAt: true });
-export const insertLmsSubmissionSchema = createInsertSchema(lmsSubmissions).omit({ id: true, submittedAt: true });
 
 // Export Types
 export type JobPosting = typeof jobPostings.$inferSelect;
@@ -899,6 +898,7 @@ export const glJournalEntries = pgTable("gl_journal_entries", {
   referenceId: integer("reference_id"), // ID from source transaction
 });
 
+
 // GL Transactions - Individual debit/credit lines
 export const glTransactions = pgTable("gl_transactions", {
   id: serial("id").primaryKey(),
@@ -946,6 +946,7 @@ export const glReconciliationItems = pgTable("gl_reconciliation_items", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
 
 // ========================================
 // ACCOUNTS RECEIVABLE (AR) MODULE TABLES

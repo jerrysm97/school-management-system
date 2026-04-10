@@ -8,7 +8,7 @@ import {
     payrollRuns, payrollDetails,
     scholarshipTypes, scholarshipApplications, studentScholarships,
     courseCategories as courseCategoriesTable, courses as coursesTable, courseSections, courseModules, courseEnrollments,
-    academicPeriods, users, students,
+    academicPeriods, users, students, type Student,
     type InsertFinIncome, type FinIncome,
     type InsertFinExpense, type FinExpense,
     type InsertFinAsset, type FinAsset,
@@ -34,12 +34,15 @@ import {
     type StudentFee, type InsertStudentFee,
     type InsertGlJournalEntry, type GlJournalEntry,
     type InsertGlTransaction, type GlTransaction,
-    type ChartOfAccount, type FiscalPeriod,
+    type ChartOfAccount, type InsertChartOfAccount, type FiscalPeriod, type InsertFiscalPeriod,
+    type GlFund, type InsertGlFund, type GlReconciliation, type InsertGlReconciliation,
+    type GlReconciliationItem, type InsertGlReconciliationItem,
+    glReconciliations, glReconciliationItems,
     type StudentEnrollment, type InsertStudentEnrollment,
     type InsertExpenseCategory, type ExpenseCategory, type InsertVendor, type Vendor, type InsertExpense, type Expense,
     type InsertApPayment, type ApPayment,
     expenseCategories, vendors, expenses, paymentPlans, paymentPlanInstallments, feeStructuresv2, studentFees, feeCategories, studentEnrollments,
-    apPayments, apInvoices
+    apPayments, purchaseOrders, purchaseOrderItems
 } from "@shared/schema";
 import { eq, and, desc, sql, lt, ne, isNull, isNotNull, inArray, sum } from "drizzle-orm";
 import { encrypt, decrypt } from "../utils/encryption";
@@ -51,7 +54,7 @@ export class FinanceService {
     // CORE FINANCE: FEES & ACCOUNTS
     // ========================================
 
-    async getFees(studentId?: number): Promise<any[]> {
+    async getFees(studentId?: string): Promise<any[]> {
         const query = db
             .select({
                 fee: fees,
@@ -91,7 +94,7 @@ export class FinanceService {
         return await db.select().from(fees).where(eq(fees.studentId, studentId as any)).orderBy(desc(fees.dueDate));
     }
 
-    async getStudentAccount(studentId: number): Promise<any> {
+    async getStudentAccount(studentId: string): Promise<any> {
         const [account] = await db.select().from(studentAccounts).where(eq(studentAccounts.studentId, studentId));
         return account;
     }
@@ -101,7 +104,7 @@ export class FinanceService {
         return account;
     }
 
-    async updateStudentBalance(accountId: number, amount: number, userId?: number): Promise<void> {
+    async updateStudentBalance(accountId: number, amount: number, userId?: string): Promise<void> {
         const [oldAccount] = await db.select()
             .from(studentAccounts)
             .where(eq(studentAccounts.id, accountId));
@@ -120,7 +123,7 @@ export class FinanceService {
         }
     }
 
-    async setFinancialHold(studentId: number, hasHold: boolean): Promise<void> {
+    async setFinancialHold(studentId: string, hasHold: boolean): Promise<void> {
         await db.update(studentAccounts)
             .set({ hasFinancialHold: hasHold })
             .where(eq(studentAccounts.studentId, studentId));
@@ -151,7 +154,7 @@ export class FinanceService {
         return newStructure;
     }
 
-    async getStudentFees(studentId: number): Promise<StudentFee[]> {
+    async getStudentFees(studentId: string): Promise<StudentFee[]> {
         return await db.select().from(studentFees).where(eq(studentFees.studentId, studentId));
     }
 
@@ -160,7 +163,7 @@ export class FinanceService {
         return newFee;
     }
 
-    async calculateStudentBill(studentId: number): Promise<{ totalDue: number; breakdown: any }> {
+    async calculateStudentBill(studentId: string): Promise<{ totalDue: number; breakdown: any }> {
         const [activePeriod] = await db.select().from(academicPeriods).where(eq(academicPeriods.isActive, true));
         if (!activePeriod) {
             return { totalDue: 0, breakdown: { error: "No active academic period" } };
@@ -281,9 +284,9 @@ export class FinanceService {
         return newPeriod;
     }
 
-    async closeFiscalPeriod(id: number, closedBy: number): Promise<void> {
+    async closeFiscalPeriod(id: number, closedBy: string): Promise<void> {
         await db.update(fiscalPeriods)
-            .set({ status: 'closed', closedAt: new Date(), closedBy })
+            .set({ isClosed: true, closedAt: new Date(), closedBy })
             .where(eq(fiscalPeriods.id, id));
     }
 
@@ -303,7 +306,7 @@ export class FinanceService {
         return entry;
     }
 
-    async postJournalEntry(id: number, postedBy: number): Promise<GlJournalEntry> {
+    async postJournalEntry(id: number, postedBy: string): Promise<GlJournalEntry> {
         const [entry] = await db.update(glJournalEntries)
             .set({ status: 'posted', postedAt: new Date(), postedBy })
             .where(eq(glJournalEntries.id, id))
@@ -333,7 +336,7 @@ export class FinanceService {
                 sql`${fiscalPeriods.startDate} <= ${today}`,
                 // @ts-ignore
                 sql`${fiscalPeriods.endDate} >= ${today}`,
-                eq(fiscalPeriods.status, 'open')
+                eq(fiscalPeriods.isClosed, false)
             ));
         return period;
     }
@@ -623,7 +626,7 @@ export class FinanceService {
             entryDate: payment.paymentDate,
             fiscalPeriodId: period.id,
             description: `Payment ${payment.paymentNumber}`,
-            createdBy: payment.createdBy || 1,
+            createdBy: (payment as any).createdBy || "00000000-0000-0000-0000-000000000000",
             referenceType: 'AR_Payment',
             referenceId: paymentId
         }, [
@@ -655,7 +658,7 @@ export class FinanceService {
         return newRule;
     }
 
-    async generateBillsFromEnrollment(studentId: number, periodId: number): Promise<void> {
+    async generateBillsFromEnrollment(studentId: string, periodId: number): Promise<void> {
         // Placeholder for complex billing logic
         console.log(`Generating bills for student ${studentId} period ${periodId}`);
     }
@@ -665,19 +668,28 @@ export class FinanceService {
         return [];
     }
 
-    async sendDunningNotice(billId: number): Promise<void> {
-        // Placeholder
+    async sendDunningNotice(studentId: string, billId: number, level?: string): Promise<any> {
+        // Placeholder - would send email/SMS notice in production
+        return { sent: true, studentId, billId, level };
     }
 
-    async getDunningHistory(billId: number): Promise<any[]> {
-        return [];
+    async getDunningHistory(studentId?: string, billId?: number): Promise<any[]> {
+        const conditions = [];
+        if (billId) conditions.push(eq(arDunningHistory.billId, billId));
+        if (studentId) conditions.push(eq(arDunningHistory.studentId, studentId));
+        return conditions.length > 0
+            ? await db.select().from(arDunningHistory).where(and(...conditions))
+            : await db.select().from(arDunningHistory);
     }
 
     // Refunds
-    async getRefundRequests(status?: string): Promise<any[]> {
-        const query = db.select().from(arRefunds);
-        if (status) query.where(eq(arRefunds.status, status as any));
-        return await query.execute();
+    async getRefundRequests(status?: string, studentId?: string): Promise<any[]> {
+        const conditions: any[] = [];
+        if (status) conditions.push(eq(arRefunds.status, status as any));
+        if (studentId) conditions.push(eq(arRefunds.studentId, studentId));
+        return conditions.length > 0
+            ? await db.select().from(arRefunds).where(and(...conditions))
+            : await db.select().from(arRefunds);
     }
 
     async createRefundRequest(data: any): Promise<any> {
@@ -685,16 +697,16 @@ export class FinanceService {
         return refund;
     }
 
-    async approveRefund(id: number, userId: number): Promise<void> {
+    async approveRefund(id: number, userId: string): Promise<void> {
         await db.update(arRefunds).set({ status: 'approved', approvedBy: userId, approvedAt: new Date() }).where(eq(arRefunds.id, id));
     }
 
-    async rejectRefund(id: number, userId: number): Promise<void> {
+    async rejectRefund(id: number, userId: string): Promise<void> {
         await db.update(arRefunds).set({ status: 'rejected', approvedBy: userId, approvedAt: new Date() }).where(eq(arRefunds.id, id));
     }
 
-    async processRefund(id: number, userId: number): Promise<void> {
-        await db.update(arRefunds).set({ status: 'processed', processedBy: userId, processedAt: new Date() }).where(eq(arRefunds.id, id));
+    async processRefund(id: number, userId: string): Promise<void> {
+        await db.update(arRefunds).set({ status: 'processed', approvedBy: userId, approvedAt: new Date() }).where(eq(arRefunds.id, id));
     }
 
     async postRefundToGL(id: number): Promise<void> {
@@ -720,7 +732,10 @@ export class FinanceService {
         return { ...newVendor, bankAccountInfo };
     }
 
-    async getVendors(): Promise<Vendor[]> {
+    async getVendors(isActive?: boolean): Promise<Vendor[]> {
+        if (isActive !== undefined) {
+            return await db.select().from(vendors).where(eq(vendors.isActive, isActive));
+        }
         return await db.select().from(vendors).where(eq(vendors.isActive, true));
     }
 
@@ -766,7 +781,7 @@ export class FinanceService {
                     sql`${fiscalPeriods.startDate} <= ${today}`,
                     // @ts-ignore
                     sql`${fiscalPeriods.endDate} >= ${today}`,
-                    eq(fiscalPeriods.status, 'open')
+                    eq(fiscalPeriods.isClosed, false)
                 ));
 
             if (!period) throw new Error("No active fiscal period");
@@ -821,16 +836,16 @@ export class FinanceService {
             }
 
             await tx.update(apExpenseReports)
-                .set({ status: 'processed' }) // Mark as processed/posted
+                .set({ status: 'paid' }) // Mark as processed/posted
                 .where(eq(apExpenseReports.id, id));
         });
     }
 
     // Reconciliations
-    async getReconciliations(accountId?: number, periodId?: number): Promise<GlReconciliation[]> {
+    async getReconciliations(accountId?: number, periodDate?: string): Promise<GlReconciliation[]> {
         const conditions = [];
         if (accountId) conditions.push(eq(glReconciliations.accountId, accountId));
-        if (periodId) conditions.push(eq(glReconciliations.fiscalPeriodId, periodId));
+        if (periodDate) conditions.push(sql`${glReconciliations.reconciliationDate} >= ${periodDate}`);
         return conditions.length > 0
             ? await db.select().from(glReconciliations).where(and(...conditions))
             : await db.select().from(glReconciliations);
@@ -851,8 +866,8 @@ export class FinanceService {
         return rec;
     }
 
-    async completeReconciliation(id: number, userId: number): Promise<void> {
-        await db.update(glReconciliations).set({ status: 'completed', completedAt: new Date(), completedBy: userId }).where(eq(glReconciliations.id, id));
+    async completeReconciliation(id: number, userId: string): Promise<void> {
+        await db.update(glReconciliations).set({ status: 'completed', reconciledAt: new Date(), reconciledBy: userId }).where(eq(glReconciliations.id, id));
     }
 
     async getReconciliationSummary(id: number): Promise<any> {
@@ -876,9 +891,9 @@ export class FinanceService {
 
     async markTransactionCleared(reconciliationId: number, transactionId: number, cleared: boolean): Promise<void> {
         if (cleared) {
-            await db.insert(glReconciliationItems).values({ reconciliationId, glTransactionId: transactionId, cleared: true, clearedDate: new Date().toISOString() });
+            await db.insert(glReconciliationItems).values({ reconciliationId, transactionId: transactionId, isCleared: true, clearedDate: new Date().toISOString() });
         } else {
-            await db.delete(glReconciliationItems).where(and(eq(glReconciliationItems.reconciliationId, reconciliationId), eq(glReconciliationItems.glTransactionId, transactionId)));
+            await db.delete(glReconciliationItems).where(and(eq(glReconciliationItems.reconciliationId, reconciliationId), eq(glReconciliationItems.transactionId, transactionId)));
         }
     }
 
@@ -957,23 +972,29 @@ export class FinanceService {
     // SCHOLARSHIPS & FINANCIAL AID
     // ========================================
 
-    async getApVendors(): Promise<Vendor[]> {
-        return await this.getVendors();
+    async getApVendors(isActive?: boolean): Promise<Vendor[]> {
+        return await this.getVendors(isActive);
     }
 
-    async getApInvoices(vendorId?: number): Promise<ApInvoice[]> {
-        const query = db.select().from(apInvoices);
-        if (vendorId) query.where(eq(apInvoices.vendorId, vendorId));
-        return await query.orderBy(desc(apInvoices.invoiceDate));
+    async getApInvoices(vendorId?: number, status?: string): Promise<ApInvoice[]> {
+        const conditions = [];
+        if (vendorId) conditions.push(eq(apInvoices.vendorId, vendorId));
+        if (status) conditions.push(eq(apInvoices.status, status as any));
+        return conditions.length > 0
+            ? await db.select().from(apInvoices).where(and(...conditions)).orderBy(desc(apInvoices.invoiceDate))
+            : await db.select().from(apInvoices).orderBy(desc(apInvoices.invoiceDate));
     }
 
-    async createApInvoice(invoice: InsertApInvoice): Promise<ApInvoice> {
+    async createApInvoice(invoice: InsertApInvoice, lineItems?: any[]): Promise<ApInvoice> {
         const [newInvoice] = await db.insert(apInvoices).values(invoice).returning();
+        if (lineItems?.length) {
+            await db.insert(apInvoiceLineItems).values(lineItems.map(item => ({ ...item, invoiceId: newInvoice.id })));
+        }
         return newInvoice;
     }
 
-    async approveApInvoice(id: number, userId: number): Promise<void> {
-        await db.update(apInvoices).set({ status: 'approved' }).where(eq(apInvoices.id, id));
+    async approveApInvoice(id: number, userId: string): Promise<void> {
+        await db.update(apInvoices).set({ status: 'approved', approvedBy: userId } as any).where(eq(apInvoices.id, id));
     }
 
     async postApInvoiceToGL(id: number): Promise<void> {
@@ -1008,7 +1029,7 @@ export class FinanceService {
         return newApp;
     }
 
-    async getScholarshipApplications(studentId?: number): Promise<ScholarshipApplication[]> {
+    async getScholarshipApplications(studentId?: string): Promise<ScholarshipApplication[]> {
         const query = db.select().from(scholarshipApplications);
         if (studentId) {
             query.where(eq(scholarshipApplications.studentId, studentId));
@@ -1021,7 +1042,7 @@ export class FinanceService {
         return newScholarship;
     }
 
-    async getStudentScholarships(studentId?: number): Promise<StudentScholarship[]> {
+    async getStudentScholarships(studentId?: string): Promise<StudentScholarship[]> {
         const query = db.select().from(studentScholarships);
         if (studentId) {
             query.where(eq(studentScholarships.studentId, studentId));
@@ -1029,7 +1050,7 @@ export class FinanceService {
         return await query.orderBy(desc(studentScholarships.createdAt));
     }
 
-    async getFinancialAidAwards(studentId?: number): Promise<FinAidAward[]> {
+    async getFinancialAidAwards(studentId?: string): Promise<FinAidAward[]> {
         const query = db.select().from(financialAidAwards);
         if (studentId) {
             query.where(eq(financialAidAwards.studentId, studentId));
@@ -1075,7 +1096,7 @@ export class FinanceService {
     // PAYMENT PLANS
     // ========================================
 
-    async getPaymentPlans(studentId?: number): Promise<PaymentPlan[]> {
+    async getPaymentPlans(studentId?: string): Promise<PaymentPlan[]> {
         const query = db.select().from(paymentPlans);
         if (studentId) {
             query.where(eq(paymentPlans.studentId, studentId));
@@ -1109,11 +1130,11 @@ export class FinanceService {
     // AUDIT & UTIL
     // ========================================
 
-    async logFinAudit(action: string, entityType: string, entityId: number, userId: number, changes?: { old?: any, new?: any }): Promise<void> {
+    async logFinAudit(action: string, entityType: string, entityId: number | string, userId: string, changes?: { old?: any, new?: any }): Promise<void> {
         await db.insert(finAuditLogs).values({
             action: action as any,
             entityType,
-            entityId,
+            entityId: typeof entityId === 'string' ? parseInt(entityId, 10) || 0 : entityId,
             userId,
             oldValue: changes?.old,
             newValue: changes?.new
@@ -1124,7 +1145,7 @@ export class FinanceService {
     // ASSETS, COMPLIANCE, BUDGETS
     // ========================================
 
-    async createFinIncome(income: InsertFinIncome, userId: number): Promise<FinIncome> {
+    async createFinIncome(income: InsertFinIncome, userId: string): Promise<FinIncome> {
         const [newIncome] = await db.insert(finIncome).values(income).returning();
         if (newIncome && userId) {
             try {
@@ -1136,7 +1157,7 @@ export class FinanceService {
         return newIncome;
     }
 
-    async getFinIncomes(periodId?: number, type?: string, payerId?: number): Promise<FinIncome[]> {
+    async getFinIncomes(periodId?: number, type?: string, payerId?: string): Promise<FinIncome[]> {
         let conditions = [];
         if (periodId) conditions.push(eq(finIncome.academicPeriodId, periodId));
         if (type) conditions.push(eq(finIncome.sourceType, type as any));

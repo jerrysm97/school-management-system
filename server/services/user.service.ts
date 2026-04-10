@@ -15,14 +15,14 @@ export function sanitizeUser(user: User): Omit<User, 'password' | 'googleId'> {
 }
 
 export class UserService {
-    async getUser(id: number): Promise<User | undefined> {
+    async getUser(id: string): Promise<User | undefined> {
         const [user] = await db.select().from(users).where(eq(users.id, id));
-        return user ? sanitizeUser(user) : undefined;
+        return user;
     }
 
     async getUserByUsername(username: string): Promise<User | undefined> {
         const [user] = await db.select().from(users).where(eq(users.username, username));
-        return user ? sanitizeUser(user) : undefined;
+        return user;
     }
 
     async getUserByIdentifier(identifier: string): Promise<User | undefined> {
@@ -34,7 +34,7 @@ export class UserService {
             )
         );
 
-        if (user) return sanitizeUser(user);
+        if (user) return user;
 
         // If not found, try to find a student with this admission number
         // We need to dynamically import students schema to avoid circular dependency if possible, 
@@ -45,12 +45,12 @@ export class UserService {
             .innerJoin(students, eq(students.userId, users.id))
             .where(eq(students.admissionNo, identifier));
 
-        return student ? sanitizeUser(student.users) : undefined;
+        return student ? student.users : undefined;
     }
 
     async getUserByGoogleId(googleId: string): Promise<User | undefined> {
         const [user] = await db.select().from(users).where(eq(users.googleId, googleId));
-        return user ? sanitizeUser(user) : undefined;
+        return user;
     }
 
     async createUser(user: InsertUser): Promise<User> {
@@ -78,7 +78,7 @@ export class UserService {
         return student ? student.users : undefined;
     }
 
-    async updateUserPassword(id: number, password: string): Promise<void> {
+    async updateUserPassword(id: string, password: string): Promise<void> {
         await db.update(users)
             .set({ password, mustChangePassword: false })
             .where(eq(users.id, id));

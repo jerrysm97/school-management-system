@@ -2,11 +2,11 @@ import { db } from "../db";
 import {
     students, teachers, classes, attendance, marks, exams, subjects, academicPeriods, users,
     type Student, type Teacher, type Class, type Attendance, type Subject, type AcademicPeriod,
-    type InsertStudent, type InsertTeacher, type InsertClass, type InsertAttendance, type User
+    type InsertStudent, type InsertTeacher, type InsertClass, type InsertAttendance, type User,
+    type InsertAcademicPeriod
 } from "@shared/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import { encrypt, decrypt } from "../utils/encryption";
-import { sanitizeUser } from "./user.service";
 
 export class AcademicService {
 
@@ -15,7 +15,7 @@ export class AcademicService {
         return await db.select().from(academicPeriods).orderBy(academicPeriods.startDate);
     }
 
-    async createAcademicPeriod(period: any): Promise<AcademicPeriod> {
+    async createAcademicPeriod(period: InsertAcademicPeriod): Promise<AcademicPeriod> {
         const [newPeriod] = await db.insert(academicPeriods).values(period).returning();
         return newPeriod;
     }
@@ -65,13 +65,13 @@ export class AcademicService {
 
             return {
                 ...student,
-                user: sanitizeUser(row.user),
+                user: row.user,
                 class: row.class
             };
         });
     }
 
-    async getStudent(id: number, includeSensitive?: boolean): Promise<(Student & { user: User }) | undefined> {
+    async getStudent(id: string, includeSensitive?: boolean): Promise<(Student & { user: User }) | undefined> {
         const [row] = await db
             .select({
                 student: students,
@@ -105,10 +105,10 @@ export class AcademicService {
             religion: decryptedOrMasked(row.student.religion),
             bloodGroup: decryptedOrMasked(row.student.bloodGroup),
         };
-        return { ...student, user: sanitizeUser(row.user) };
+        return { ...student, user: row.user };
     }
 
-    async getStudentByUserId(userId: number): Promise<(Student & { user: User }) | undefined> {
+    async getStudentByUserId(userId: string): Promise<(Student & { user: User }) | undefined> {
         const [row] = await db
             .select({
                 student: students,
@@ -119,7 +119,7 @@ export class AcademicService {
             .where(eq(students.userId, userId));
 
         if (!row) return undefined;
-        return { ...row.student, user: sanitizeUser(row.user) };
+        return { ...row.student, user: row.user };
     }
 
     async createStudent(student: InsertStudent): Promise<Student> {
@@ -134,15 +134,15 @@ export class AcademicService {
         return newStudent;
     }
 
-    async updateStudentStatus(id: number, status: "approved" | "rejected"): Promise<void> {
+    async updateStudentStatus(id: string, status: "approved" | "rejected"): Promise<void> {
         await db.update(students).set({ status }).where(eq(students.id, id));
     }
 
-    async bulkUpdateStudentStatus(ids: number[], status: "approved" | "rejected"): Promise<void> {
+    async bulkUpdateStudentStatus(ids: string[], status: "approved" | "rejected"): Promise<void> {
         await db.update(students).set({ status }).where(inArray(students.id, ids));
     }
 
-    async bulkDeleteStudents(ids: number[]): Promise<void> {
+    async bulkDeleteStudents(ids: string[]): Promise<void> {
         await db.update(students).set({ deletedAt: new Date() }).where(inArray(students.id, ids));
     }
 
@@ -156,15 +156,15 @@ export class AcademicService {
             .from(teachers)
             .innerJoin(users, eq(teachers.userId, users.id));
 
-        return rows.map(row => ({ ...row.teacher, user: sanitizeUser(row.user) }));
+        return rows.map(row => ({ ...row.teacher, user: row.user }));
     }
 
-    async getTeacher(id: number): Promise<Teacher | undefined> {
+    async getTeacher(id: string): Promise<Teacher | undefined> {
         const [teacher] = await db.select().from(teachers).where(eq(teachers.id, id));
         return teacher;
     }
 
-    async getTeacherByUserId(userId: number): Promise<Teacher | undefined> {
+    async getTeacherByUserId(userId: string): Promise<Teacher | undefined> {
         const [teacher] = await db.select().from(teachers).where(eq(teachers.userId, userId));
         return teacher;
     }
@@ -175,7 +175,7 @@ export class AcademicService {
     }
 
     // Classes
-    async getClasses(classTeacherId?: number): Promise<(Class & { classTeacher: Teacher | null })[]> {
+    async getClasses(classTeacherId?: string): Promise<(Class & { classTeacher: Teacher | null })[]> {
         const query = db
             .select({
                 class: classes,
@@ -207,7 +207,7 @@ export class AcademicService {
         await db.insert(attendance).values(records);
     }
 
-    async getAttendance(classId?: number, date?: string, studentId?: number, academicPeriodId?: number): Promise<Attendance[]> {
+    async getAttendance(classId?: number, date?: string, studentId?: string, academicPeriodId?: number): Promise<Attendance[]> {
         let conditions = [];
         if (date) conditions.push(eq(attendance.date, date));
         if (studentId) conditions.push(eq(attendance.studentId, studentId));

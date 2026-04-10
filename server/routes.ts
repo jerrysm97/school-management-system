@@ -26,9 +26,10 @@ if (!JWT_SECRET) {
   throw new Error("FATAL: SESSION_SECRET environment variable is not set. Server cannot start.");
 }
 
-const getQueryParam = (param: string | string[] | undefined): string | undefined => {
-  if (Array.isArray(param)) return param[0];
-  return param;
+const getQueryParam = (param: any): string | undefined => {
+  if (!param) return undefined;
+  if (Array.isArray(param)) return String(param[0]);
+  return String(param);
 };
 
 // ========================================
@@ -67,7 +68,7 @@ const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1 };
 
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
-  // Explicit cost parameters prevent silent breakage if Node defaults change.
+  // @ts-ignore — scrypt options are valid but the TS overload is strict
   const buf = (await scryptAsync(password, salt, 64, SCRYPT_OPTIONS)) as Buffer;
   return `${buf.toString("hex")}.${salt}`;
 }
@@ -77,7 +78,7 @@ async function comparePassword(supplied: string, stored: string) {
     if (!stored || !stored.includes(".") || stored.startsWith("$")) return false;
     const [hashed, salt] = stored.split(".");
     if (!hashed || !salt) return false;
-    // Cost parameters must exactly match hashPassword or all comparisons will silently fail.
+    // @ts-ignore — scrypt options are valid but the TS overload is strict
     const buf = (await scryptAsync(supplied, salt, 64, SCRYPT_OPTIONS)) as Buffer;
     return timingSafeEqual(Buffer.from(hashed, "hex"), buf);
   } catch (err) {
@@ -231,11 +232,18 @@ const authorizeStudentAccess = async (req: Request, res: Response, next: NextFun
 import { searchGlobal } from "./routes/search";
 import { notificationService } from "./services/notification.service";
 import { auditService } from "./services/audit.service";
+import { registerStorageRoutes } from "./routes/storage.routes";
+import { getGoogleOAuthUrl, verifySupabaseToken } from "./supabase";
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // ========================================
+  // SUPABASE STORAGE ROUTES
+  // ========================================
+  registerStorageRoutes(app);
+
   // ========================================
   // PERIMETER DEFENSE - Apply authentication and authorization to entire path prefixes
   // ========================================
@@ -337,7 +345,40 @@ export async function registerRoutes(
     }
   });
 
-  // NEW: Change Password Route (with rate limiting)
+  // Google OAuth via Supabase — redirects user to Supabase's Google OAuth page
+  app.get("/api/auth/google/callback", async (req, res) => {
+    const { code } = req.query;
+    if (!code) return res.status(400).json({ message: "Missing OAuth code" });
+    res.redirect(`/login?code=${code}`);
+  });
+
+  app.post("/api/auth/supabase-token", async (req, res) => {
+    // Validate a Supabase session token from frontend OAuth login
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ message: "Token required" });
+
+    try {
+      const supabaseUser = await verifySupabaseToken(token);
+      if (!supabaseUser) return res.status(401).json({ message: "Invalid Supabase token" });
+
+      // Find or create the local user record
+      const user = await storage.users.getUserByIdentifier(supabaseUser.email || "");
+      if (!user) {
+        return res.status(404).json({ message: "No institutional account found. Contact IT." });
+      }
+
+      const jwtToken = jwt.sign(
+        { id: user.id, username: user.username, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '8h' }
+      );
+      res.json({ token: jwtToken, user });
+    } catch (err: any) {
+      res.status(500).json({ message: "OAuth validation failed", error: err.message });
+    }
+  });
+
+  // NEW: Reset Password Route
   app.post("/api/auth/change-password", authRateLimiter, authenticateToken, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     const userId = (req as any).user.id;
@@ -417,8 +458,10 @@ export async function registerRoutes(
         return res.status(403).json({ message: `Role '${creatorRole}' cannot create '${targetRole}'` });
       }
 
-      input.password = await hashPassword(input.password);
-      const user = await storage.users.createUser(input);
+      if (input.password) {
+        input.password = await hashPassword(input.password);
+      }
+      const user = await storage.users.createUser(input as any);
       res.status(201).json(user);
     } catch (e: any) {
       if (e.message?.includes("already exists")) {
@@ -431,7 +474,7 @@ export async function registerRoutes(
   // --- Students ---
   app.get(api.students.list.path, authenticateToken, async (req, res) => {
     const classId = req.query.classId ? Number(req.query.classId) : undefined;
-    const status = getQueryParam(req.query.status);
+    const status = getQueryParam(req.query.status) as "pending" | "approved" | "rejected" | undefined;
     const students = await storage.getStudents(classId, status);
     res.json(students);
   });
@@ -697,7 +740,7 @@ export async function registerRoutes(
   // --- Fees ---
   app.get(api.fees.list.path, authenticateToken, async (req, res) => {
     const user = (req as any).user;
-    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    let studentId: string | undefined = req.query.studentId ? String(req.query.studentId) : undefined;
 
     // If student, force filter to their own record
     if (user.role === 'student' || user.role === 'parent') {
@@ -705,7 +748,7 @@ export async function registerRoutes(
       if (!student) {
         return res.json([]);
       }
-      studentId = student.id;
+      studentId = String(student.id);
     }
 
     const feesList = await storage.getFees(studentId);
@@ -827,7 +870,7 @@ export async function registerRoutes(
   app.get("/api/library/books", authenticateToken, async (req, res) => {
     try {
       // In a real app, we'd add search/pagination parameters here
-      const books = await storage.getBooks();
+      const books = await storage.getLibraryItems();
       res.json(books);
     } catch (e: any) {
       res.status(500).json({ message: e.message || "Error fetching books" });
@@ -837,7 +880,7 @@ export async function registerRoutes(
   app.post("/api/library/books", authenticateToken, requirePermission('library', 'write'), async (req, res) => {
     try {
       // Basic validation/creation
-      const book = await storage.createBook(req.body);
+      const book = await storage.createLibraryItem(req.body);
       res.status(201).json(book);
     } catch (e: any) {
       res.status(400).json({ message: e.message || "Error adding book" });
@@ -971,7 +1014,7 @@ export async function registerRoutes(
 
   // --- Exams ---
   app.get(api.exams.list.path, authenticateToken, async (req, res) => {
-    const classId = req.query.classId ? String(req.query.classId) : undefined;
+    const classId = req.query.classId ? Number(req.query.classId) : undefined;
     const examsList = await storage.getExams(classId);
     res.json(examsList);
   });
@@ -990,14 +1033,14 @@ export async function registerRoutes(
   // --- Marks ---
   app.get(api.marks.list.path, authenticateToken, async (req, res) => {
     const user = (req as any).user;
-    let examId = req.query.examId ? String(req.query.examId) : undefined;
+    let examId = req.query.examId ? Number(req.query.examId) : undefined;
     let studentId = req.query.studentId ? String(req.query.studentId) : undefined;
 
     // Student restriction
     if (user.role === 'student' || user.role === 'parent') {
       const student = await storage.getStudentByUserId(user.id);
       if (!student) return res.json([]);
-      studentId = student.id;
+      studentId = String(student.id);
       // Allows filtering by examId if provided, but MUST match studentId
     }
 
@@ -1034,7 +1077,7 @@ export async function registerRoutes(
 
   // --- Timetable ---
   app.get(api.timetable.list.path, authenticateToken, async (req, res) => {
-    const classId = req.query.classId ? String(req.query.classId) : undefined;
+    const classId = req.query.classId ? Number(req.query.classId) : undefined;
     const slots = await storage.getTimetable(classId);
     res.json(slots);
   });
@@ -1089,7 +1132,7 @@ export async function registerRoutes(
 
   // --- Course History --- (IDOR Protected)
   app.get("/api/students/:id/course-history", authenticateToken, authorizeStudentAccess, async (req, res) => {
-    const studentId = req.params.id;
+    const studentId = req.params.id as string;
     const history = await storage.getStudentCourseHistory(studentId);
     res.json(history);
   });
@@ -1100,7 +1143,7 @@ export async function registerRoutes(
 
   // Student Accounts - with student access authorization
   app.get("/api/students/:id/account", authenticateToken, authorizeStudentAccess, async (req, res) => {
-    const studentId = req.params.id;
+    const studentId = req.params.id as string;
     let account = await storage.getStudentAccount(studentId);
     if (!account) {
       // Auto-create account if doesn't exist
@@ -1121,7 +1164,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/students/:id/account/hold", authenticateToken, requirePermission('fees', 'write'), async (req, res) => {
-    const studentId = req.params.id;
+    const studentId = req.params.id as string;
     const { hasHold } = req.body;
     await storage.setFinancialHold(studentId, hasHold);
     res.json({ message: "Hold status updated" });
@@ -1129,7 +1172,7 @@ export async function registerRoutes(
 
   // Fee Structures
   app.get("/api/fee-structures", authenticateToken, async (req, res) => {
-    const periodId = req.query.academicPeriodId ? String(req.query.academicPeriodId) : undefined;
+    const periodId = req.query.academicPeriodId ? Number(req.query.academicPeriodId) : undefined;
     const structures = await storage.getFeeStructures(periodId);
     res.json(structures);
   });
@@ -1163,7 +1206,7 @@ export async function registerRoutes(
 
   // Financial Transactions (IDOR Protected)
   app.get("/api/accounts/:id/transactions", authenticateToken, authorizeStudentAccess, async (req, res) => {
-    const accountId = req.params.id;
+    const accountId = Number(req.params.id);
     const transactions = await storage.getFinancialTransactions(accountId);
     res.json(transactions);
   });
@@ -1607,7 +1650,7 @@ export async function registerRoutes(
   // --- Income Management ---
   // RBAC: Accountant/Admin can read/write.
   app.get("/api/finance/income", authenticateToken, requireFinanceAccess, async (req, res) => {
-    const periodId = req.query.periodId ? String(req.query.periodId) : undefined;
+    const periodId = req.query.periodId ? Number(req.query.periodId) : undefined;
     const type = req.query.type as string;
     const incomes = await storage.getFinIncomes(periodId, type);
     res.json(incomes);
@@ -1686,7 +1729,7 @@ export async function registerRoutes(
   // --- Student Ledger (Advanced Finance) - with student access authorization ---
   app.get("/api/finance/student-ledger/:studentId", authenticateToken, authorizeStudentAccess, async (req, res) => {
     try {
-      const studentId = req.params.studentId;
+      const studentId = req.params.studentId as string;
       if (!studentId) return res.status(400).json({ message: "Invalid student ID" });
 
       // 1. Get Student Details (to find linked User ID)
@@ -2003,8 +2046,8 @@ export async function registerRoutes(
   app.get("/api/gl/reconciliations", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const accountId = req.query.accountId ? Number(req.query.accountId) : undefined;
-      const periodId = req.query.periodId ? Number(req.query.periodId) : undefined;
-      const reconciliations = await storage.finance.getReconciliations(accountId, periodId);
+      const periodDate = req.query.periodDate ? String(req.query.periodDate) : undefined;
+      const reconciliations = await storage.finance.getReconciliations(accountId, periodDate);
       res.json(reconciliations);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -2041,8 +2084,7 @@ export async function registerRoutes(
     const item = await storage.finance.markTransactionCleared(
       Number(req.params.reconId),
       Number(req.params.txnId),
-      req.body.isCleared,
-      req.body.clearedDate
+      Boolean(req.body.isCleared)
     );
     res.json(item);
   });
@@ -2148,7 +2190,7 @@ export async function registerRoutes(
   app.post("/api/ar/refunds/:id/reject", authenticateToken, requireFinanceAccess, async (req, res) => {
     try {
       const { reason } = req.body;
-      const refund = await storage.finance.rejectRefund(Number((req.params.id as string)), (req as any).user.id, reason);
+      const refund = await storage.finance.rejectRefund(Number((req.params.id as string)), (req as any).user.id);
       res.json(refund);
     } catch (e: any) {
       res.status(400).json({ message: e.message });
@@ -2177,7 +2219,7 @@ export async function registerRoutes(
   // AR Auto-Billing Routes
   app.get("/api/ar/billing-rules", authenticateToken, requireFinanceAccess, async (req, res) => {
     const periodId = req.query.periodId ? parseInt(req.query.periodId as string) : undefined;
-    const rules = await storage.finance.getAutoBillRules(periodId);
+    const rules = await storage.finance.getAutoBillRules();
     res.json(rules);
   });
 
@@ -2343,7 +2385,7 @@ export async function registerRoutes(
 
   // AR Dunning
   app.get("/api/ar/dunning/overdue-bills", authenticateToken, requireFinanceAccess, async (req, res) => {
-    const daysOverdue = req.query.daysOverdue ? Number(req.query.daysOverdue) : undefined;
+    const daysOverdue = req.query.daysOverdue ? Number(req.query.daysOverdue) : 30;
     try {
       const bills = await storage.finance.getOverdueBills(daysOverdue);
       res.json(bills);
@@ -2642,7 +2684,7 @@ export async function registerRoutes(
 
   app.get("/api/finance/programs", authenticateToken, async (req, res) => {
     const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
-    const programs = await storage.getPrograms(isActive);
+    const programs = await storage.getPrograms(undefined, isActive);
     res.json(programs);
   });
 
@@ -2940,7 +2982,7 @@ export async function registerRoutes(
 
   // Timesheets
   app.get("/api/finance/timesheets", authenticateToken, requireFinanceAccess, async (req, res) => {
-    const employeeId = req.query.employeeId ? Number(req.query.employeeId) : undefined;
+    const employeeId = req.query.employeeId ? String(req.query.employeeId) : undefined;
     const startDate = req.query.startDate as string | undefined;
     const endDate = req.query.endDate as string | undefined;
     const timesheets = await storage.getTimesheets(employeeId, startDate, endDate);
@@ -3032,14 +3074,14 @@ export async function registerRoutes(
   });
 
   app.get("/api/finance/scholarships/applications", authenticateToken, async (req, res) => {
-    let studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+    let studentId = req.query.studentId ? String(req.query.studentId) : undefined;
     const user = (req as any).user;
 
     // IDOR PROTECTION: Students can only see their own applications
     if (user.role === 'student') {
       const student = await storage.getStudentByUserId(user.id);
       if (!student) return res.json([]);
-      studentId = student.id;
+      studentId = String(student.id);
     }
 
     const apps = await storage.getScholarshipApplications(studentId);
@@ -3058,11 +3100,11 @@ export async function registerRoutes(
   app.get("/api/finance/scholarships/student/:studentId", authenticateToken, async (req, res) => {
     // IDOR PROTECTION: Verify access
     const user = (req as any).user;
-    const targetStudentId = Number(req.params.studentId);
+    const targetStudentId = req.params.studentId as string;
 
     if (user.role === 'student') {
       const student = await storage.getStudentByUserId(user.id);
-      if (!student || student.id !== targetStudentId) {
+      if (!student || String(student.id) !== targetStudentId) {
         return res.status(403).json({ message: "Unauthorized access to these records" });
       }
     }
@@ -3234,7 +3276,7 @@ export async function registerRoutes(
       const logs = await auditService.getAuditLogs({
         tableName: tableName as string,
         recordId: recordId ? parseInt(recordId as string) : undefined,
-        userId: userId ? parseInt(userId as string) : undefined,
+        userId: userId ? String(userId) : undefined,
         action: action as string,
         startDate: startDate ? new Date(startDate as string) : undefined,
         endDate: endDate ? new Date(endDate as string) : undefined,
@@ -3328,9 +3370,9 @@ export async function registerRoutes(
   // --- Student 360 Profile ---
   app.get("/api/students/:id/full-profile", authenticateToken, authorizeStudentAccess, async (req, res) => {
     try {
-      const studentId = Number(req.params.id);
+      const studentId = req.params.id as string;
       const [student, health, docs, relationships, hostel, transport, library] = await Promise.all([
-        storage.getStudent(studentId, false), // Default: masked
+        storage.getStudent(studentId as any, false), // Default: masked
         storage.getStudentHealth(studentId),
         storage.getStudentDocuments(studentId),
         storage.getStudentRelationships(studentId),
@@ -3346,7 +3388,6 @@ export async function registerRoutes(
         userId: (req as any).user.id,
         action: "view",
         tableName: "students",
-        recordId: student.id,
         metadata: { endpoint: "/api/students/:id/full-profile", reason: "Accessing full student dossier" },
         req
       });
@@ -3370,7 +3411,7 @@ export async function registerRoutes(
   // Reveal Sensitive Data for Editing
   app.get("/api/students/:id/reveal-sensitive", authenticateToken, authorizeStudentAccess, async (req, res) => {
     try {
-      const studentId = Number(req.params.id);
+      const studentId = req.params.id as string;
 
       // Additional check: If not self, require specific write permission
       const user = (req as any).user;
@@ -3378,7 +3419,7 @@ export async function registerRoutes(
         return res.sendStatus(403);
       }
 
-      const student = await storage.getStudent(studentId, true); // true = unmasked
+      const student = await storage.getStudent(studentId as any, true); // true = unmasked
       if (!student) return res.status(404).json({ message: "Student not found" });
 
       // High-Priority Audit Log
@@ -3386,7 +3427,6 @@ export async function registerRoutes(
         userId: user.id,
         action: "view",
         tableName: "students",
-        recordId: student.id,
         metadata: { endpoint: "/api/students/:id/reveal-sensitive", reason: "Revealing sensitive PII for editing" },
         req
       });
@@ -3400,7 +3440,7 @@ export async function registerRoutes(
   // Secure Student Data Routes (IDOR Protected)
   app.get("/api/students/:id/enrollments", authenticateToken, authorizeStudentAccess, async (req, res) => {
     try {
-      const enrollments = await storage.getEnrollmentHistory(Number(req.params.id));
+      const enrollments = await storage.getEnrollmentHistory(req.params.id as string);
       res.json(enrollments);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -3409,7 +3449,7 @@ export async function registerRoutes(
 
   app.get("/api/students/:id/aid", authenticateToken, authorizeStudentAccess, async (req, res) => {
     try {
-      const awards = await storage.getFinancialAidAwards(Number(req.params.id));
+      const awards = await storage.getFinancialAidAwards(req.params.id as string);
       res.json(awards);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -3418,7 +3458,7 @@ export async function registerRoutes(
 
   app.get("/api/students/:id/bill", authenticateToken, authorizeStudentAccess, async (req, res) => {
     try {
-      const bill = await storage.calculateStudentBill(Number(req.params.id));
+      const bill = await storage.calculateStudentBill(req.params.id as string);
       res.json(bill);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -3429,7 +3469,7 @@ export async function registerRoutes(
   // --- Staff Appraisals ---
   app.get("/api/hr/appraisals/:employeeId", authenticateToken, async (req, res) => {
     try {
-      const appraisals = await storage.getStaffAppraisals(Number(req.params.employeeId));
+      const appraisals = await storage.getStaffAppraisals(req.params.employeeId as string);
       res.json(appraisals);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -3486,7 +3526,7 @@ export async function registerRoutes(
 
   app.get("/api/crm/interactions/:entityType/:entityId", authenticateToken, async (req, res) => {
     try {
-      const interactions = await storage.getCrmInteractions(req.params.entityType, Number(req.params.entityId));
+      const interactions = await storage.getCrmInteractions(req.params.entityType as string, req.params.entityId as string);
       res.json(interactions);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -3513,6 +3553,7 @@ export async function registerRoutes(
 }
 
 async function seedDatabase() {
+  // Original Admin Setup
   const adminUser = await storage.getUserByUsername("admin");
   if (!adminUser) {
     console.log("Seeding database...");

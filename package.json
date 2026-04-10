@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "npx kill-port 5001 && NODE_ENV=development tsx server/index.ts",
+    "dev": "lsof -ti :5001 | xargs kill -9 2>/dev/null; NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist-server/index.cjs",
     "check": "tsc",
@@ -81,6 +81,7 @@
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
     "zod": "^3.24.2",
+    "@supabase/supabase-js": "^2.46.1",
     "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {

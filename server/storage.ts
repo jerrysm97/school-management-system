@@ -4,6 +4,7 @@ import { UserService } from "./services/user.service";
 import { LibraryService } from "./services/library.service";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import memoryStoreFactory from "memorystore";
 import { pool } from "./db";
 import { FinanceService } from "./services/finance.service";
 
@@ -165,7 +166,6 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByIdentifier(identifier: string): Promise<User | undefined>;
   getUserByGoogleId(googleId: string): Promise<User | undefined>;
-
   createUser(user: InsertUser): Promise<User>;
   updateUserPassword(id: string, password: string): Promise<void>;
 
@@ -184,38 +184,60 @@ export interface IStorage {
   getTeacherByUserId(userId: string): Promise<Teacher | undefined>;
   createTeacher(teacher: InsertTeacher): Promise<Teacher>;
 
-  // Classes
+  // Classes & Academic
   getClasses(): Promise<(Class & { classTeacher: Teacher | null })[]>;
   getSubjects(): Promise<Subject[]>;
   createClass(cls: InsertClass): Promise<Class>;
-
-  // Attendance
-  markAttendance(records: InsertAttendance[]): Promise<void>;
-  getAttendance(classId?: number, date?: string, studentId?: string, academicPeriodId?: number): Promise<Attendance[]>;
+  getAcademicPeriods(): Promise<any[]>;
+  createAcademicPeriod(period: any): Promise<any>;
+  toggleAcademicPeriod(id: number, isActive: boolean): Promise<void>;
+  getTimetable(classId?: number): Promise<any[]>;
+  createTimetableSlot(slot: any): Promise<any>;
+  deleteTimetableSlot(id: number): Promise<void>;
+  getStudentCourseHistory(studentId: string): Promise<any[]>;
+  createCourseHistory(history: any): Promise<any>;
 
   // Stats
   getAdminStats(): Promise<{ totalStudents: number; totalTeachers: number; totalClasses: number }>;
   getAttendanceStats(): Promise<{ attendanceRate: number; attendanceWeeklyChange: number; totalRecords: number }>;
 
-  // Fees
+  // Attendance
+  markAttendance(records: InsertAttendance[]): Promise<void>;
+  updateDailyAttendance(id: number, present: boolean): Promise<Attendance>;
+  getAttendance(classId?: number, date?: string, studentId?: string, academicPeriodId?: number): Promise<Attendance[]>;
+
+  // Exams & Marks
+  getExams(classId?: number): Promise<any[]>;
+  createExam(exam: any): Promise<any>;
+  getMarks(examId?: number, studentId?: string): Promise<any[]>;
+  createMark(mark: any): Promise<any>;
+
+  // Financial Engine (Core & Student Side)
+  getStudentAccount(studentId: string): Promise<any>;
+  createStudentAccount(data: any): Promise<any>;
+  updateStudentBalance(accountId: number, amount: number, userId?: string): Promise<void>;
+  setFinancialHold(studentId: string, hasHold: boolean): Promise<void>;
+  getFeeStructures(academicPeriodId?: number): Promise<any[]>;
+  createFeeStructure(data: any): Promise<any>;
+  getEnrollmentHistory(studentId: string): Promise<any[]>;
+  createEnrollment(data: any): Promise<any>;
+  updateEnrollmentStatus(id: number, status: string): Promise<void>;
+  getFinancialTransactions(accountId: number): Promise<any[]>;
+  createFinancialTransaction(data: any): Promise<any>;
+  getFinancialAidAwards(studentId: string): Promise<FinAidAward[]>;
+  createFinancialAidAward(award: InsertFinAidAward): Promise<FinAidAward>;
+  updateFinancialAidStatus(id: number, status: string): Promise<FinAidAward>;
+  calculateStudentBill(studentId: string): Promise<{ totalDue: number; breakdown: any }>;
+
+  // Fees & Payments
   getFees(studentId?: string): Promise<any[]>;
   createFee(fee: any): Promise<any>;
   bulkCreateFees(feesData: any[]): Promise<any[]>;
-  updateFeeStatus(id: number, status: 'paid' | 'pending' | 'overdue'): Promise<any>;
+  updateFeeStatus(id: number, status: "paid" | "pending" | "overdue"): Promise<any>;
   getFeeStats(): Promise<{ totalCollected: number; totalPending: number; totalOverdue: number }>;
   bulkUpdateFeeStatus(ids: number[], status: "paid" | "pending"): Promise<void>;
   bulkDeleteFees(ids: number[]): Promise<void>;
   getOverdueFeesWithoutPenalty(): Promise<any[]>;
-
-  // Exams
-  getExams(classId?: number): Promise<any[]>;
-  createExam(exam: any): Promise<any>;
-
-  // Marks
-  getMarks(examId?: number, studentId?: string): Promise<any[]>;
-  createMark(mark: any): Promise<any>;
-  // Phase 3: Payments & Expenses
-  // Payments
   createPayment(payment: InsertPayment): Promise<Payment>;
   getPayment(id: number): Promise<Payment | undefined>;
   getPaymentsByStudent(studentId: string): Promise<Payment[]>;
@@ -229,50 +251,9 @@ export interface IStorage {
   createStudentScholarship(scholarship: InsertStudentScholarship): Promise<StudentScholarship>;
   getStudentScholarships(studentId?: string): Promise<StudentScholarship[]>;
 
-  // Expenses
-  createExpenseCategory(category: InsertExpenseCategory): Promise<ExpenseCategory>;
-  getExpenseCategories(): Promise<ExpenseCategory[]>;
-  createVendor(vendor: InsertVendor): Promise<Vendor>;
-  getVendors(): Promise<Vendor[]>;
-  createExpense(expense: InsertExpense): Promise<Expense>;
-  getExpenses(departmentId?: number): Promise<Expense[]>;
-
-
-  // Legacy
-  updateDailyAttendance(id: number, present: boolean): Promise<Attendance>;
-  // Timetable
-  getTimetable(classId?: number): Promise<any[]>;
-  createTimetableSlot(slot: any): Promise<any>;
-  deleteTimetableSlot(id: number): Promise<void>;
-
-  // Academic Periods
-  getAcademicPeriods(): Promise<any[]>;
-  createAcademicPeriod(period: any): Promise<any>;
-  toggleAcademicPeriod(id: number, isActive: boolean): Promise<void>;
-
-  // Course History
-  getStudentCourseHistory(studentId: string): Promise<any[]>;
-  createCourseHistory(history: any): Promise<any>;
-
-  // Financial Engine
-  getStudentAccount(studentId: string): Promise<any>;
-  createStudentAccount(data: any): Promise<any>;
-  updateStudentBalance(accountId: number, amount: number, userId?: string): Promise<void>;
-  setFinancialHold(studentId: string, hasHold: boolean): Promise<void>;
-  getFeeStructures(academicPeriodId?: number): Promise<any[]>;
-  createFeeStructure(data: any): Promise<any>;
-  getEnrollmentHistory(studentId: string): Promise<any[]>;
-  createEnrollment(data: any): Promise<any>;
-  updateEnrollmentStatus(id: number, status: string): Promise<void>;
-  getFinancialTransactions(accountId: number): Promise<any[]>;
-  createFinancialTransaction(data: any): Promise<any>;
-  getFinancialAidAwards(studentId: string): Promise<any[]>;
-  createFinancialAidAward(award: any): Promise<any>;
-  updateAidStatus(id: number, status: string): Promise<void>;
-
-  // Advanced Finance Module
+  // Advanced Finance Module (Income/Expense/Assets/Budgets)
   createFinIncome(income: InsertFinIncome, userId: string): Promise<FinIncome>;
-  getFinIncomes(periodId?: number, type?: string, payerId?: number): Promise<FinIncome[]>;
+  getFinIncomes(periodId?: number, type?: string, payerId?: string): Promise<FinIncome[]>;
   createFinExpense(expense: InsertFinExpense): Promise<FinExpense>;
   getFinExpenses(periodId?: number, category?: string, userId?: string): Promise<FinExpense[]>;
   createFinAsset(asset: InsertFinAsset): Promise<FinAsset>;
@@ -282,78 +263,27 @@ export interface IStorage {
   createFinCompliance(compliance: InsertFinCompliance): Promise<FinCompliance>;
   getFinComplianceItems(type?: string): Promise<FinCompliance[]>;
   logFinAudit(action: string, entityType: string, entityId: number, userId: string, changes?: { old?: any, new?: any }): Promise<void>;
-  calculateStudentBill(studentId: string): Promise<{ totalDue: number; breakdown: any }>;
 
-  // LMS Module
-  getCourseCategories(): Promise<any[]>;
-  createCourseCategory(data: InsertCourseCategory): Promise<any>;
-
-  // Library
-  createLibraryItem(data: InsertLibraryItem): Promise<LibraryItem>;
-  getLibraryItems(search?: string): Promise<LibraryItem[]>;
-  getBookByISBN(isbn: string): Promise<LibraryItem | undefined>;
-  createLibraryLoan(data: InsertLibraryLoan): Promise<LibraryLoan>;
-  getLibraryLoans(userId?: string, activeOnly?: boolean): Promise<LibraryLoan[]>;
-  createCourseCategory(data: InsertCourseCategory): Promise<any>;
-
-  getCourses(userRole?: string): Promise<Course[]>;
-  getCourse(id: number): Promise<Course | undefined>;
-  createCourse(data: InsertCourse): Promise<Course>;
-
-  getCourseSections(courseId: number): Promise<CourseSection[]>;
-  createCourseSection(data: InsertCourseSection): Promise<CourseSection>;
-
-  getCourseModules(sectionId: number): Promise<CourseModule[]>;
-  createCourseModule(data: InsertCourseModule): Promise<CourseModule>;
-
-  createLmsAssignment(data: InsertLmsAssignment): Promise<LmsAssignment>;
-  getLmsAssignment(id: number): Promise<LmsAssignment | undefined>;
-  createLmsSubmission(data: InsertLmsSubmission): Promise<LmsSubmission>;
-  getLmsSubmissions(assignmentId: number): Promise<LmsSubmission[]>;
-  isEnrolled(userId: string, courseId: number): Promise<boolean>;
-
-  // HR & Admissions
-  createJobPosting(data: InsertJobPosting): Promise<JobPosting>;
-  getJobPostings(status?: "open" | "closed"): Promise<JobPosting[]>;
-  createJobApplication(data: InsertJobApplication): Promise<JobApplication>;
-  getJobApplications(jobId?: number): Promise<JobApplication[]>;
-  updateJobApplicationStatus(id: number, status: string): Promise<void>;
-  createStaff(data: InsertStaff): Promise<Staff>;
-  getStaffList(): Promise<(Staff & { user: User })[]>;
-
-  // ========================================
-  // GENERAL LEDGER (GL) MODULE
-  // ========================================
-  // Chart of Accounts
+  // General Ledger (GL) Module
   getChartOfAccounts(isActive?: boolean): Promise<ChartOfAccount[]>;
   getChartOfAccount(id: number): Promise<ChartOfAccount | undefined>;
   createChartOfAccount(data: InsertChartOfAccount): Promise<ChartOfAccount>;
   updateChartOfAccount(id: number, data: Partial<InsertChartOfAccount>): Promise<ChartOfAccount>;
-
-  // Funds
   getGlFunds(isActive?: boolean): Promise<GlFund[]>;
   createGlFund(data: InsertGlFund): Promise<GlFund>;
-
-  // Fiscal Periods
   getFiscalPeriods(year?: number): Promise<FiscalPeriod[]>;
   getCurrentFiscalPeriod(): Promise<FiscalPeriod | undefined>;
   createFiscalPeriod(data: InsertFiscalPeriod): Promise<FiscalPeriod>;
   closeFiscalPeriod(id: number, userId: string): Promise<void>;
-
-  // Journal Entries
-  createJournalEntry(entry: Omit<InsertGlJournalEntry, 'journalNumber'> & { journalNumber?: string }, transactions: Omit<InsertGlTransaction, 'journalEntryId'>[]): Promise<GlJournalEntry>;
+  createJournalEntry(entry: Omit<InsertGlJournalEntry, "journalNumber"> & { journalNumber?: string }, transactions: Omit<InsertGlTransaction, "journalEntryId">[]): Promise<GlJournalEntry>;
   getJournalEntries(periodId?: number, status?: string): Promise<(GlJournalEntry & { transactions: GlTransaction[] })[]>;
   getJournalEntry(id: number): Promise<(GlJournalEntry & { transactions: GlTransaction[] }) | undefined>;
   postJournalEntry(id: number, userId: string): Promise<void>;
   reverseJournalEntry(id: number, userId: string, reason: string): Promise<GlJournalEntry>;
-
-  // GL Transactions & Reports
   getAccountBalance(accountId: number, fundId?: number, asOfDate?: string): Promise<number>;
   getTrialBalance(periodId: number): Promise<any[]>;
   getBalanceSheet(asOfDate: string): Promise<any>;
   getIncomeStatement(startDate: string, endDate: string): Promise<any>;
-
-  // GL Reconciliations
   getReconciliations(accountId?: number, status?: string): Promise<GlReconciliation[]>;
   getReconciliation(id: number): Promise<any>;
   createReconciliation(data: InsertGlReconciliation): Promise<GlReconciliation>;
@@ -364,243 +294,125 @@ export interface IStorage {
   getUnclearedTransactions(accountId: number, asOfDate: string): Promise<any[]>;
   getReconciliationSummary(reconciliationId: number): Promise<any>;
 
-
-  // ========================================
-  // ACCOUNTS RECEIVABLE (AR) MODULE
-  // ========================================
+  // Accounts Receivable (AR) Module
   createStudentBill(bill: InsertArStudentBill, lineItems: InsertArBillLineItem[]): Promise<ArStudentBill>;
   getStudentBills(studentId?: string, status?: string): Promise<ArStudentBill[]>;
   getStudentBill(id: number): Promise<(ArStudentBill & { lineItems: ArBillLineItem[], student: Student }) | undefined>;
   postStudentBillToGL(billId: number): Promise<void>;
-
-  createArPayment(payment: InsertArPayment, allocations: { billId: number, amount: number }[]): Promise<ArPayment>;
-  getArPayments(studentId?: string): Promise<ArPayment[]>;
-  postArPaymentToGL(paymentId: number): Promise<void>;
-
-  // AR Refunds
-  createRefundRequest(refund: any): Promise<any>;
-  getRefundRequests(status?: string, studentId?: string): Promise<any[]>;
-  approveRefund(id: number, userId: string): Promise<any>;
-  rejectRefund(id: number, userId: string, reason: string): Promise<any>;
-  processRefund(id: number, checkNumber: string): Promise<any>;
-  postRefundToGL(id: number): Promise<void>;
-
-  // AR Dunning
-  getOverdueBills(daysOverdue?: number): Promise<any[]>;
-  sendDunningNotice(studentId: string, billId: number, level: number): Promise<any>;
-  getDunningHistory(studentId?: string, billId?: number): Promise<any[]>;
-
-  // AR Auto-Billing
-  createAutoBillRule(rule: InsertArAutoBillRule): Promise<ArAutoBillRule>;
-  getAutoBillRules(periodId?: number): Promise<ArAutoBillRule[]>;
-  generateBillsFromEnrollment(studentId: string, enrollmentId: number): Promise<ArStudentBill[]>;
-
+  createArPayment?(payment: InsertArPayment, allocations: { billId: number, amount: number }[]): Promise<ArPayment>;
+  getArPayments?(studentId?: string): Promise<ArPayment[]>;
+  postArPaymentToGL?(paymentId: number): Promise<void>;
+  createRefundRequest?(refund: any): Promise<any>;
+  getRefundRequests?(status?: string, studentId?: string): Promise<any[]>;
+  approveRefund?(id: number, userId: string): Promise<any>;
+  rejectRefund?(id: number, userId: string, reason: string): Promise<any>;
+  processRefund?(id: number, checkNumber: string): Promise<any>;
+  postRefundToGL?(id: number): Promise<void>;
+  getOverdueBills?(daysOverdue?: number): Promise<any[]>;
+  sendDunningNotice?(studentId: string, billId: number, level: number): Promise<any>;
+  getDunningHistory?(studentId?: string, billId?: number): Promise<any[]>;
+  createAutoBillRule?(rule: InsertArAutoBillRule): Promise<ArAutoBillRule>;
+  getAutoBillRules?(periodId?: number): Promise<ArAutoBillRule[]>;
+  generateBillsFromEnrollment?(studentId: string, enrollmentId: number): Promise<ArStudentBill[]>;
   getAgingReport(): Promise<any[]>;
 
-  // ========================================
-  // ACCOUNTS PAYABLE (AP) MODULE
-  // ========================================
+  // Accounts Payable (AP) Module
   createApVendor(vendor: InsertApVendor): Promise<ApVendor>;
   getApVendors(isActive?: boolean): Promise<ApVendor[]>;
-
   createApInvoice(invoice: InsertApInvoice, lineItems: any[]): Promise<ApInvoice>;
   getApInvoices(vendorId?: number, status?: string): Promise<ApInvoice[]>;
   approveApInvoice(id: number, userId: string): Promise<void>;
   postApInvoiceToGL(invoiceId: number): Promise<void>;
-
-  // AP Expense Reports
   createExpenseReport(report: any, items: any[]): Promise<any>;
-  getExpenseReports(userId?: number, status?: string): Promise<any[]>;
+  getExpenseReports(userId?: string, status?: string): Promise<any[]>;
   submitExpenseReport(id: number): Promise<void>;
-  approveExpenseReport(id: number, approverId: number): Promise<void>;
-  rejectExpenseReport(id: number, approverId: number, reason: string): Promise<void>;
+  approveExpenseReport(id: number, approverId: string): Promise<void>;
+  rejectExpenseReport(id: number, approverId: string, reason: string): Promise<void>;
   postExpenseReportToGL(id: number): Promise<void>;
-
-  // AP 1099 Reporting
   generate1099Records(taxYear: number): Promise<any[]>;
   get1099Records(taxYear: number): Promise<any[]>;
-
-  // AP PO Matching
   createPurchaseOrder(po: any, items: any[]): Promise<PurchaseOrder>;
   getPurchaseOrders(vendorId?: number, status?: string): Promise<PurchaseOrder[]>;
   receivePO(poId: number, items: any[]): Promise<void>;
-  matchInvoiceToPO(invoiceId: number, poId: number): Promise<boolean>; // Returns true if matched fully
+  matchInvoiceToPO(invoiceId: number, poId: number): Promise<boolean>;
   getUnmatchedInvoices(): Promise<ApInvoice[]>;
-
   createApPayment(payment: InsertApPayment): Promise<ApPayment>;
   postApPaymentToGL(paymentId: number): Promise<void>;
 
-  // ========================================
-  // PAYROLL MODULE
-  // ========================================
+  // Payroll Module
   createPayrollRun(run: InsertPayrollRun, details: InsertPayrollDetail[]): Promise<PayrollRun>;
   getPayrollRuns(status?: string): Promise<PayrollRun[]>;
   getPayrollRun(id: number): Promise<(PayrollRun & { details: PayrollDetail[] }) | undefined>;
   calculatePayroll(runId: number): Promise<void>;
   processPayroll(runId: number): Promise<void>;
   postPayrollToGL(runId: number): Promise<void>;
-
-  // Timesheets
-  getTimesheets(employeeId?: number, startDate?: string, endDate?: string): Promise<Timesheet[]>;
+  getTimesheets(employeeId?: string, startDate?: string, endDate?: string): Promise<Timesheet[]>;
   createTimesheet(data: InsertTimesheet): Promise<Timesheet>;
-  approveTimesheet(id: number, approverId: number): Promise<void>;
-
-  // W-2/Tax Records
+  approveTimesheet(id: number, approverId: string): Promise<void>;
   generateW2Records(taxYear: number): Promise<W2Record[]>;
-  getW2Records(taxYear: number, employeeId?: number): Promise<W2Record[]>;
+  getW2Records(taxYear: number, employeeId?: string): Promise<W2Record[]>;
 
-  // ========================================
-  // PROGRAMS MODULE
-  // ========================================
-  getProgram(id: number): Promise<Program | undefined>;
-  createProgram(data: InsertProgram): Promise<Program>;
-  updateProgram(id: number, data: Partial<InsertProgram>): Promise<Program>;
+  // LMS Module
+  getCourseCategories(): Promise<CourseCategory[]>;
+  createCourseCategory(data: InsertCourseCategory): Promise<CourseCategory>;
+  getCourses(userRole?: string): Promise<Course[]>;
+  getCourse(id: number): Promise<Course | undefined>;
+  createCourse(data: InsertCourse): Promise<Course>;
+  getCourseSections(courseId: number): Promise<CourseSection[]>;
+  createCourseSection(data: InsertCourseSection): Promise<CourseSection>;
+  getCourseModules(sectionId: number): Promise<CourseModule[]>;
+  createCourseModule(data: InsertCourseModule): Promise<CourseModule>;
+  createLmsAssignment(data: InsertLmsAssignment): Promise<LmsAssignment>;
+  getLmsAssignment(id: number): Promise<LmsAssignment | undefined>;
+  createLmsSubmission(data: InsertLmsSubmission): Promise<LmsSubmission>;
+  getLmsSubmissions(assignmentId: number): Promise<LmsSubmission[]>;
+  isEnrolled(userId: string, courseId: number): Promise<boolean>;
 
-  // ========================================
-  // DEPARTMENTS MODULE
-  // ========================================
-  getDepartments(isActive?: boolean): Promise<Department[]>;
-  getDepartment(id: number): Promise<Department | undefined>;
-  createDepartment(data: InsertDepartment): Promise<Department>;
-  updateDepartment(id: number, data: Partial<InsertDepartment>): Promise<Department>;
-  getDepartmentBudgetVariance(departmentId: number): Promise<{ budgeted: number; actual: number; variance: number }>;
+  // Library Module
+  createLibraryItem(item: InsertLibraryItem): Promise<LibraryItem>;
+  getLibraryItemByIsbn(isbn: string): Promise<LibraryItem | undefined>;
+  getLibraryItems(): Promise<LibraryItem[]>;
+  createLibraryLoan(data: InsertLibraryLoan): Promise<LibraryLoan>;
+  getLibraryLoans(userId?: string, activeOnly?: boolean): Promise<LibraryLoan[]>;
 
-  // ========================================
-  // DONORS MODULE
-  // ========================================
-  getDonors(isActive?: boolean): Promise<Donor[]>;
-  getDonor(id: number): Promise<(Donor & { donations: Donation[] }) | undefined>;
-  createDonor(data: InsertDonor): Promise<Donor>;
-  updateDonor(id: number, data: Partial<InsertDonor>): Promise<Donor>;
+  // HR & Administration
+  createJobPosting(data: InsertJobPosting): Promise<JobPosting>;
+  getJobPostings(status?: "open" | "closed"): Promise<JobPosting[]>;
+  createJobApplication(data: InsertJobApplication): Promise<JobApplication>;
+  getJobApplications(jobId?: number): Promise<JobApplication[]>;
+  updateJobApplicationStatus(id: number, status: string): Promise<void>;
+  createStaff(data: InsertStaff): Promise<Staff>;
+  getStaffList(): Promise<(Staff & { user: User })[]>;
+  createStaffLeaveBalance(data: InsertStaffLeaveBalance): Promise<StaffLeaveBalance>;
+  getStaffLeaveBalance(employeeId: string, year: number): Promise<StaffLeaveBalance | undefined>;
+  createLeaveRequest(data: InsertLeaveRequest): Promise<LeaveRequest>;
+  getLeaveRequests(employeeId?: string, status?: string): Promise<LeaveRequest[]>;
+  createStaffAppraisal(data: InsertStaffAppraisal): Promise<StaffAppraisal>;
+  getStaffAppraisals(employeeId?: string): Promise<StaffAppraisal[]>;
 
-  // Donations
-  getDonations(donorId?: number, startDate?: string, endDate?: string): Promise<Donation[]>;
-  createDonation(data: InsertDonation): Promise<Donation>;
-  postDonationToGL(donationId: number): Promise<void>;
+  // CRM Module
+  getAdmissionsLeads(status?: string): Promise<AdmissionsLead[]>;
+  createAdmissionsLead(data: InsertAdmissionsLead): Promise<AdmissionsLead>;
+  getCrmInteractions(entityType?: string, entityId?: string): Promise<CrmInteraction[]>;
+  createCrmInteraction(data: InsertCrmInteraction): Promise<CrmInteraction>;
 
-  // ========================================
-  // ENDOWMENT & INVESTMENT MODULE
-  // ========================================
-  getEndowmentFunds(isActive?: boolean): Promise<EndowmentFund[]>;
-  getEndowmentFund(id: number): Promise<(EndowmentFund & { investments: Investment[] }) | undefined>;
-  createEndowmentFund(data: InsertEndowmentFund): Promise<EndowmentFund>;
-  updateEndowmentFund(id: number, data: Partial<InsertEndowmentFund>): Promise<EndowmentFund>;
-  calculateSpendableAmount(fundId: number): Promise<number>;
-
-  // Investments
-  getInvestments(fundId?: number): Promise<Investment[]>;
-  createInvestment(data: InsertInvestment): Promise<Investment>;
-  updateInvestmentValue(id: number, currentPrice: number): Promise<Investment>;
-
-  // Investment Transactions
-  getInvestmentTransactions(fundId?: number, investmentId?: number): Promise<InvestmentTransaction[]>;
-  createInvestmentTransaction(data: InsertInvestmentTransaction): Promise<InvestmentTransaction>;
-
-  // ========================================
-  // ASSET & DEPRECIATION MODULE
-  // ========================================
-  getDepreciationSchedules(assetId?: number): Promise<DepreciationSchedule[]>;
-  createDepreciationSchedule(data: InsertDepreciationSchedule): Promise<DepreciationSchedule>;
-  runMonthlyDepreciation(): Promise<DepreciationEntry[]>;
-  getDepreciationEntries(scheduleId?: number): Promise<DepreciationEntry[]>;
-
-  // Asset Disposals
-  getAssetDisposals(assetId?: number): Promise<AssetDisposal[]>;
-  createAssetDisposal(data: InsertAssetDisposal): Promise<AssetDisposal>;
-  postDisposalToGL(disposalId: number): Promise<void>;
-
-  // Payment Plans
-  getPaymentPlans(studentId?: string): Promise<PaymentPlan[]>;
-  getPaymentPlan(id: number): Promise<(PaymentPlan & { installments: PaymentPlanInstallment[] }) | undefined>;
-  createPaymentPlan(plan: InsertPaymentPlan): Promise<PaymentPlan>;
-  createPaymentPlanInstallment(installment: InsertPaymentPlanInstallment): Promise<PaymentPlanInstallment>;
-  updatePaymentPlanStatus(id: number, status: string): Promise<void>;
-
-  // Financial Aid
-  getFinancialAidAwards(studentId?: string): Promise<FinAidAward[]>;
-  createFinancialAidAward(award: InsertFinAidAward): Promise<FinAidAward>;
-  updateFinancialAidStatus(id: number, status: string): Promise<FinAidAward>;
-
-  // Phase 2: Academic & Fee Foundation
-  // Academic Years
-  getAcademicYears(): Promise<AcademicYear[]>;
-  createAcademicYear(year: InsertAcademicYear): Promise<AcademicYear>;
-
-  // Semesters
-  getSemesters(academicYearId?: number): Promise<Semester[]>;
-  createSemester(semester: InsertSemester): Promise<Semester>;
-
-  // Departments
-  getDepartments(): Promise<Department[]>;
-  createDepartment(dept: InsertDepartment): Promise<Department>;
-
-  // Programs
-  getPrograms(departmentId?: number, isActive?: boolean): Promise<Program[]>;
-  createProgram(program: InsertProgram): Promise<Program>;
-
-  // Student Enrollments
-  getStudentEnrollments(studentId: string): Promise<StudentEnrollment[]>;
-  createStudentEnrollment(enrollment: InsertStudentEnrollment): Promise<StudentEnrollment>;
-
-  // Fee Categories
-  getFeeCategories(): Promise<FeeCategory[]>;
-  createFeeCategory(category: InsertFeeCategory): Promise<FeeCategory>;
-
-  // Fee Structures V2
-  getFeeStructuresV2(academicYearId?: number, programId?: number): Promise<FeeStructureV2[]>;
-  createFeeStructureV2(structure: InsertFeeStructureV2): Promise<FeeStructureV2>;
-
-  // Student Fees (New Ledger)
-  getStudentFees(studentId: string): Promise<StudentFee[]>;
-  createStudentFee(fee: InsertStudentFee): Promise<StudentFee>;
-
-  // ========================================
-  // PROFESSIONAL MODULES
-  // ========================================
-
-  // Identity & Documents
+  // Professional Modules (Health, Hostel, Transport)
   createStudentRelationship(data: InsertStudentRelationship): Promise<StudentRelationship>;
   getStudentRelationships(studentId: string): Promise<StudentRelationship[]>;
   createStudentHealth(data: InsertStudentHealth): Promise<StudentHealth>;
   getStudentHealth(studentId: string): Promise<StudentHealth | undefined>;
   createStudentDocument(data: InsertStudentDocument): Promise<StudentDocument>;
   getStudentDocuments(studentId: string): Promise<StudentDocument[]>;
-
-  // Hostel Management
   createHostel(data: InsertHostel): Promise<Hostel>;
   getHostels(status?: string): Promise<Hostel[]>;
   createHostelRoom(data: InsertHostelRoom): Promise<HostelRoom>;
   getHostelRooms(hostelId: number): Promise<HostelRoom[]>;
   createHostelAllocation(data: InsertHostelAllocation): Promise<HostelAllocation>;
   getHostelAllocations(hostelId?: number, studentId?: string): Promise<HostelAllocation[]>;
-
-  // Transport Management
   createTransportRoute(data: InsertTransportRoute): Promise<TransportRoute>;
   getTransportRoutes(): Promise<TransportRoute[]>;
   createTransportAllocation(data: InsertTransportAllocation): Promise<TransportAllocation>;
   getTransportAllocations(routeId?: number, studentId?: string): Promise<TransportAllocation[]>;
-
-  // Library Management
-  createLibraryItem(data: InsertLibraryItem): Promise<LibraryItem>;
-  getLibraryItems(search?: string): Promise<LibraryItem[]>;
-  createLibraryLoan(data: InsertLibraryLoan): Promise<LibraryLoan>;
-  getLibraryLoans(userId?: string, activeOnly?: boolean): Promise<LibraryLoan[]>;
-
-  // Research Grants
-  createResearchGrant(data: InsertResearchGrant): Promise<ResearchGrant>;
-  getResearchGrants(): Promise<ResearchGrant[]>;
-
-  // HR Module
-  createStaffLeaveBalance(data: InsertStaffLeaveBalance): Promise<StaffLeaveBalance>;
-  getStaffLeaveBalance(employeeId: string, year: number): Promise<StaffLeaveBalance | undefined>;
-  createLeaveRequest(data: InsertLeaveRequest): Promise<LeaveRequest>;
-  getLeaveRequests(employeeId?: string, status?: string): Promise<LeaveRequest[]>;
-  createStaffAppraisal(data: InsertStaffAppraisal): Promise<StaffAppraisal>;
-
-  // Library (Open Library Integration)
-  createBook(book: InsertLibraryBook): Promise<LibraryBook>;
-  getBookByISBN(isbn: string): Promise<LibraryBook | undefined>;
-  getBooks(): Promise<LibraryBook[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -611,9 +423,11 @@ export class DatabaseStorage implements IStorage {
   public library: LibraryService;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({
-      pool,
-      createTableIfMissing: true,
+    // connect-pg-simple needs a pg.Pool but we use postgres-js.
+    // Use MemoryStore in dev; switch to pg Pool in production separately.
+    const MemoryStore = memoryStoreFactory(session);
+    this.sessionStore = new MemoryStore({
+      checkPeriod: 86400000
     });
     this.users = new UserService();
     this.academic = new AcademicService();
@@ -726,7 +540,7 @@ export class DatabaseStorage implements IStorage {
 
   // Classes
   async getClasses(classTeacherId?: number): Promise<(Class & { classTeacher: Teacher | null })[]> {
-    return this.academic.getClasses(classTeacherId);
+    return this.academic.getClasses(classTeacherId as any);
   }
 
   async getSubjects(): Promise<Subject[]> {
@@ -1107,7 +921,7 @@ export class DatabaseStorage implements IStorage {
     return this.finance.createStudentFee(fee);
   }
 
-  async getFinIncomes(periodId?: number, type?: string, payerId?: number): Promise<FinIncome[]> {
+  async getFinIncomes(periodId?: number, type?: string, payerId?: string): Promise<FinIncome[]> {
     let conditions = [];
     if (periodId) conditions.push(eq(finIncome.academicPeriodId, periodId));
     if (type) conditions.push(eq(finIncome.sourceType, type as any));
@@ -1560,7 +1374,7 @@ export class DatabaseStorage implements IStorage {
 
   async closeFiscalPeriod(id: number, userId: string): Promise<void> {
     await db.update(fiscalPeriods)
-      .set({ isClosed: true, closedAt: new Date(), closedBy: Number(userId) })
+      .set({ isClosed: true, closedAt: new Date(), closedBy: userId })
       .where(eq(fiscalPeriods.id, id));
   }
 
@@ -1594,7 +1408,7 @@ export class DatabaseStorage implements IStorage {
 
   async postJournalEntry(id: number, userId: string): Promise<void> {
     await db.update(glJournalEntries)
-      .set({ status: 'posted', postedAt: new Date(), postedBy: Number(userId) })
+      .set({ status: 'posted', postedAt: new Date(), postedBy: userId })
       .where(eq(glJournalEntries.id, id));
   }
 
@@ -1619,7 +1433,7 @@ export class DatabaseStorage implements IStorage {
       entryDate: new Date().toISOString().split('T')[0],
       fiscalPeriodId: original.fiscalPeriodId,
       description: `REVERSAL - ${original.description} - ${reason}`,
-      createdBy: Number(userId),
+      createdBy: userId,
       referenceType: 'Manual_Reversal',
       referenceId: original.id
     }, reversedTransactions);
@@ -1749,7 +1563,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async getExpenseReports(userId?: number, status?: string): Promise<any[]> {
+  async getExpenseReports(userId?: string, status?: string): Promise<any[]> {
     return await db.query.apExpenseReports.findMany({
       where: and(
         userId ? eq(apExpenseReports.employeeId, userId) : undefined,
@@ -1766,7 +1580,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(apExpenseReports.id, id));
   }
 
-  async approveExpenseReport(id: number, approverId: number): Promise<void> {
+  async approveExpenseReport(id: number, approverId: string): Promise<void> {
     await db.update(apExpenseReports)
       .set({
         status: 'approved',
@@ -1775,7 +1589,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(apExpenseReports.id, id));
   }
 
-  async rejectExpenseReport(id: number, approverId: number, reason: string): Promise<void> {
+  async rejectExpenseReport(id: number, approverId: string, reason: string): Promise<void> {
     await db.update(apExpenseReports)
       .set({ status: 'rejected' }) // In real app, would store rejection reason in audit log
       .where(eq(apExpenseReports.id, id));
@@ -1933,7 +1747,7 @@ export class DatabaseStorage implements IStorage {
 
   async approveApInvoice(id: number, userId: string): Promise<void> {
     await db.update(apInvoices)
-      .set({ status: 'approved', approvedBy: Number(userId), approvedAt: new Date() })
+      .set({ status: 'approved', approvedBy: userId, approvedAt: new Date() } as any)
       .where(eq(apInvoices.id, id));
   }
 
@@ -2336,7 +2150,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Timesheets
-  async getTimesheets(employeeId?: number, startDate?: string, endDate?: string): Promise<Timesheet[]> {
+  async getTimesheets(employeeId?: string, startDate?: string, endDate?: string): Promise<Timesheet[]> {
     const conditions = [];
     if (employeeId) conditions.push(eq(timesheets.employeeId, employeeId));
     if (startDate) conditions.push(sql`${timesheets.workDate} >= ${startDate}`);
@@ -2353,7 +2167,7 @@ export class DatabaseStorage implements IStorage {
     return timesheet;
   }
 
-  async approveTimesheet(id: number, approverId: number): Promise<void> {
+  async approveTimesheet(id: number, approverId: string): Promise<void> {
     await db.update(timesheets).set({
       approvedBy: approverId,
       approvedAt: new Date()
@@ -2373,10 +2187,11 @@ export class DatabaseStorage implements IStorage {
       .where(sql`${payrollDetails.payrollRunId} IN (${sql.join(runIds, sql`, `)})`);
 
     // Aggregate by employee
-    const employeeTotals: Record<number, any> = {};
+    const employeeTotals: Record<string, any> = {};
     for (const d of details) {
-      if (!employeeTotals[d.employeeId]) {
-        employeeTotals[d.employeeId] = {
+      const empKey = String(d.employeeId);
+      if (!employeeTotals[empKey]) {
+        employeeTotals[empKey] = {
           employeeId: d.employeeId,
           totalWages: 0,
           federalTaxWithheld: 0,
@@ -2386,13 +2201,13 @@ export class DatabaseStorage implements IStorage {
           medicareTax: 0
         };
       }
-      const e = employeeTotals[d.employeeId];
-      e.totalWages += d.grossPay;
-      e.federalTaxWithheld += d.federalTax || 0;
-      e.socialSecurityWages += d.grossPay;
-      e.socialSecurityTax += d.socialSecurity || 0;
-      e.medicareWages += d.grossPay;
-      e.medicareTax += d.medicare || 0;
+      const e = employeeTotals[empKey];
+      e.totalWages += (d as any).grossPay || 0;
+      e.federalTaxWithheld += (d as any).federalTax || 0;
+      e.socialSecurityWages += (d as any).grossPay || 0;
+      e.socialSecurityTax += (d as any).socialSecurity || 0;
+      e.medicareWages += (d as any).grossPay || 0;
+      e.medicareTax += (d as any).medicare || 0;
     }
 
     // Create W2 records
@@ -2416,7 +2231,7 @@ export class DatabaseStorage implements IStorage {
     return w2s;
   }
 
-  async getW2Records(taxYear: number, employeeId?: number): Promise<W2Record[]> {
+  async getW2Records(taxYear: number, employeeId?: string): Promise<W2Record[]> {
     const conditions = [eq(w2Records.taxYear, taxYear)];
     if (employeeId) conditions.push(eq(w2Records.employeeId, employeeId));
     return await db.select().from(w2Records).where(and(...conditions));
@@ -2880,6 +2695,12 @@ export class DatabaseStorage implements IStorage {
     const [record] = await db.insert(libraryItems).values(data).returning();
     return record;
   }
+
+  async getLibraryItemByIsbn(isbn: string): Promise<LibraryItem | undefined> {
+    const [item] = await db.select().from(libraryItems).where(eq(libraryItems.isbn, isbn));
+    return item;
+  }
+
   async getLibraryItems(search?: string): Promise<LibraryItem[]> {
     if (search) {
       const lowerSearch = `%${search.toLowerCase()}%`;
@@ -2892,11 +2713,6 @@ export class DatabaseStorage implements IStorage {
       );
     }
     return await db.select().from(libraryItems);
-  }
-
-  async getBookByISBN(isbn: string): Promise<LibraryItem | undefined> {
-    const [book] = await db.select().from(libraryItems).where(eq(libraryItems.isbn, isbn));
-    return book;
   }
   async createLibraryLoan(data: InsertLibraryLoan): Promise<LibraryLoan> {
     const [record] = await db.insert(libraryLoans).values(data).returning();
@@ -2944,8 +2760,12 @@ export class DatabaseStorage implements IStorage {
     const [record] = await db.insert(staffAppraisals).values(data).returning();
     return record;
   }
-  async getStaffAppraisals(employeeId: number): Promise<StaffAppraisal[]> {
-    return await db.select().from(staffAppraisals).where(eq(staffAppraisals.employeeId, employeeId));
+  async getStaffAppraisals(employeeId?: string): Promise<StaffAppraisal[]> {
+    const conditions = [];
+    if (employeeId) conditions.push(eq(staffAppraisals.employeeId, employeeId));
+    if (conditions.length === 0) return await db.select().from(staffAppraisals);
+    // @ts-ignore
+    return await db.select().from(staffAppraisals).where(and(...conditions));
   }
 
   // CRM
@@ -2962,24 +2782,22 @@ export class DatabaseStorage implements IStorage {
     const [record] = await db.insert(crmInteractions).values(data).returning();
     return record;
   }
-  async getCrmInteractions(entityType: string, entityId: number): Promise<CrmInteraction[]> {
-    return await db.select().from(crmInteractions)
-      .where(and(eq(crmInteractions.entityType, entityType), eq(crmInteractions.entityId, entityId)));
-  }
-  // Library
-  async createBook(book: InsertLibraryBook): Promise<LibraryBook> {
-    const [newBook] = await db.insert(libraryBooks).values(book).returning();
-    return newBook;
+  async getCrmInteractions(entityType?: string, entityId?: string): Promise<CrmInteraction[]> {
+    const conditions = [];
+    if (entityType) conditions.push(eq(crmInteractions.entityType, entityType));
+    // entityId is integer in schema, but we'll cast if it's a numeric string
+    if (entityId) {
+      const numericId = parseInt(entityId);
+      if (!isNaN(numericId)) {
+        conditions.push(eq(crmInteractions.entityId, numericId));
+      }
+    }
+    
+    if (conditions.length === 0) return await db.select().from(crmInteractions);
+    // @ts-ignore
+    return await db.select().from(crmInteractions).where(and(...conditions));
   }
 
-  async getBookByISBN(isbn: string): Promise<LibraryBook | undefined> {
-    const [book] = await db.select().from(libraryBooks).where(eq(libraryBooks.isbn, isbn));
-    return book;
-  }
-
-  async getBooks(): Promise<LibraryBook[]> {
-    return await db.select().from(libraryBooks);
-  }
 }
 
 export const storage = new DatabaseStorage();

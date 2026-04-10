@@ -2,8 +2,8 @@ import { db } from "../db";
 import {
     auditLogs,
     fiscalPeriodLocks,
-    InsertAuditLog,
-    AuditLog
+    type InsertAuditLog,
+    type AuditLog
 } from "@shared/schema";
 import { eq, and, between, sql, desc } from "drizzle-orm";
 import { Request } from "express";
@@ -24,10 +24,10 @@ export class AuditService {
 
     /**
      * Log an action to the audit trail
-     * This is the main entry point for all audit logging
+     * userId is a UUID string (matches users.id which is uuid type)
      */
     async log(params: {
-        userId?: number;
+        userId?: string;
         action: "create" | "update" | "delete" | "login" | "logout" | "view" | "export" | "approve" | "reject";
         tableName: string;
         recordId?: number;
@@ -40,10 +40,10 @@ export class AuditService {
         const clientInfo = getClientInfo(req);
 
         const [log] = await db.insert(auditLogs).values({
-            userId,
+            userId: userId ?? null,
             action,
             tableName,
-            recordId,
+            recordId: recordId ?? null,
             oldValue: oldValue || null,
             newValue: newValue || null,
             metadata: metadata || {},
@@ -55,35 +55,34 @@ export class AuditService {
         return log;
     }
 
-    // Convenience methods for common operations
-    async logCreate(tableName: string, recordId: number, newValue: Record<string, any>, userId?: number, req?: Request): Promise<AuditLog> {
+    // Convenience methods — userId is a UUID string
+    async logCreate(tableName: string, recordId: number, newValue: Record<string, any>, userId?: string, req?: Request): Promise<AuditLog> {
         return this.log({ userId, action: "create", tableName, recordId, newValue, req });
     }
 
-    async logUpdate(tableName: string, recordId: number, oldValue: Record<string, any>, newValue: Record<string, any>, userId?: number, req?: Request): Promise<AuditLog> {
+    async logUpdate(tableName: string, recordId: number, oldValue: Record<string, any>, newValue: Record<string, any>, userId?: string, req?: Request): Promise<AuditLog> {
         return this.log({ userId, action: "update", tableName, recordId, oldValue, newValue, req });
     }
 
-    async logDelete(tableName: string, recordId: number, oldValue: Record<string, any>, userId?: number, req?: Request): Promise<AuditLog> {
+    async logDelete(tableName: string, recordId: number, oldValue: Record<string, any>, userId?: string, req?: Request): Promise<AuditLog> {
         return this.log({ userId, action: "delete", tableName, recordId, oldValue, req });
     }
 
-    async logLogin(userId: number, success: boolean, req?: Request): Promise<AuditLog> {
+    async logLogin(userId: string, success: boolean, req?: Request): Promise<AuditLog> {
         return this.log({
             userId,
             action: "login",
             tableName: "users",
-            recordId: userId,
             metadata: { success },
             req
         });
     }
 
-    async logLogout(userId: number, req?: Request): Promise<AuditLog> {
-        return this.log({ userId, action: "logout", tableName: "users", recordId: userId, req });
+    async logLogout(userId: string, req?: Request): Promise<AuditLog> {
+        return this.log({ userId, action: "logout", tableName: "users", req });
     }
 
-    async logExport(userId: number, tableName: string, filters?: Record<string, any>, req?: Request): Promise<AuditLog> {
+    async logExport(userId: string, tableName: string, filters?: Record<string, any>, req?: Request): Promise<AuditLog> {
         return this.log({ userId, action: "export", tableName, metadata: { filters }, req });
     }
 
@@ -94,7 +93,7 @@ export class AuditService {
     async getAuditLogs(params: {
         tableName?: string;
         recordId?: number;
-        userId?: number;
+        userId?: string;
         action?: string;
         startDate?: Date;
         endDate?: Date;
@@ -135,8 +134,8 @@ export class AuditService {
             .orderBy(desc(auditLogs.createdAt));
     }
 
-    // Get user activity
-    async getUserActivity(userId: number, limit = 100): Promise<AuditLog[]> {
+    // Get user activity — userId is a UUID string
+    async getUserActivity(userId: string, limit = 100): Promise<AuditLog[]> {
         return await db.select()
             .from(auditLogs)
             .where(eq(auditLogs.userId, userId))
@@ -167,7 +166,7 @@ export class AuditService {
         return period;
     }
 
-    async lockFiscalPeriod(periodId: number, userId: number): Promise<boolean> {
+    async lockFiscalPeriod(periodId: number, userId: string): Promise<boolean> {
         await db.update(fiscalPeriodLocks)
             .set({
                 isLocked: true,
@@ -176,7 +175,6 @@ export class AuditService {
             })
             .where(eq(fiscalPeriodLocks.id, periodId));
 
-        // Log the lock action
         await this.log({
             userId,
             action: "approve",
@@ -188,7 +186,7 @@ export class AuditService {
         return true;
     }
 
-    async unlockFiscalPeriod(periodId: number, userId: number, reason: string): Promise<boolean> {
+    async unlockFiscalPeriod(periodId: number, userId: string, reason: string): Promise<boolean> {
         await db.update(fiscalPeriodLocks)
             .set({
                 isLocked: false,
@@ -196,7 +194,6 @@ export class AuditService {
             })
             .where(eq(fiscalPeriodLocks.id, periodId));
 
-        // Log the unlock action (this is critical - should rarely happen)
         await this.log({
             userId,
             action: "reject",
